@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Hudson River Trading - Software Engineer Intern Application</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 40px; background: #f9fafb; color: #111827; }
+    .container { max-width: 650px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    h1 { font-size: 22px; margin-bottom: 8px; }
+    h2 { font-size: 15px; color: #4b5563; font-weight: normal; margin-bottom: 24px; }
+    .field { margin-bottom: 16px; }
+    label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+    input[type="text"], input[type="email"], input[type="tel"], textarea, select {
+      width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; box-sizing: border-box;
+    }
+    textarea { height: 90px; }
+    .submit-btn {
+      background: #0284c7; color: white; border: none; padding: 10px 20px; font-size: 15px; font-weight: 600; border-radius: 6px; cursor: pointer;
+    }
+    .submit-btn:hover { background: #0369a1; }
+    #confirmation-message { display: none; padding: 20px; background: #ecfdf5; border: 1px solid #10b981; border-radius: 6px; margin-top: 20px; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>Hudson River Trading</h1>
+  <h2>Software Engineer Intern - Systems & Core Tech (Summer 2027)</h2>
+
+  <form id="application_form" action="#" method="POST" onsubmit="event.preventDefault(); document.getElementById('application_form').style.display='none'; document.getElementById('confirmation-message').style.display='block';">
+    <div class="field">
+      <label for="first_name">First Name *</label>
+      <input type="text" id="first_name" name="first_name" required>
+    </div>
+
+    <div class="field">
+      <label for="last_name">Last Name *</label>
+      <input type="text" id="last_name" name="last_name" required>
+    </div>
+
+    <div class="field">
+      <label for="email">Email *</label>
+      <input type="email" id="email" name="email" required>
+    </div>
+
+    <div class="field">
+      <label for="phone">Phone *</label>
+      <input type="tel" id="phone" name="phone" required>
+    </div>
+
+    <div class="field">
+      <label for="resume">Resume / CV *</label>
+      <input type="file" id="resume" name="resume" required>
+    </div>
+
+    <div class="field">
+      <label for="job_application_answers_attributes_0_text_value">LinkedIn Profile URL</label>
+      <input type="text" id="job_application_answers_attributes_0_text_value" name="linkedin_url">
+    </div>
+
+    <div class="field">
+      <label for="job_application_answers_attributes_1_text_value">GitHub Profile URL</label>
+      <input type="text" id="job_application_answers_attributes_1_text_value" name="github_url">
+    </div>
+
+    <div class="field">
+      <label for="job_application_answers_attributes_2_text_value">Personal Website / Portfolio</label>
+      <input type="text" id="job_application_answers_attributes_2_text_value" name="website_url">
+    </div>
+
+    <div class="field">
+      <label for="school">University / College *</label>
+      <input type="text" id="school" name="school">
+    </div>
+
+    <div class="field">
+      <label for="degree">Degree *</label>
+      <input type="text" id="degree" name="degree" value="Bachelor of Science">
+    </div>
+
+    <div class="field">
+      <label for="major">Major *</label>
+      <input type="text" id="major" name="major" value="Computer Science">
+    </div>
+
+    <div class="field">
+      <label for="gpa">GPA</label>
+      <input type="text" id="gpa" name="gpa" value="3.90">
+    </div>
+
+    <div class="field">
+      <label for="work_authorization">Are you legally authorized to work in the United States without sponsorship? *</label>
+      <select id="work_authorization" name="work_authorization" required>
+        <option value="">-- Please Select --</option>
+        <option value="yes">Yes</option>
+        <option value="no">No</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="why_company">Why are you interested in Hudson River Trading? *</label>
+      <textarea id="why_company" name="why_company" required></textarea>
+    </div>
+
+    <div class="field">
+      <label for="project_description">Describe a challenging technical project you engineered and your contributions. *</label>
+      <textarea id="project_description" name="project_description" required></textarea>
+    </div>
+
+    <div class="field" style="margin-top: 24px;">
+      <button type="submit" id="submit_app" class="submit-btn">Submit Application</button>
+    </div>
+  </form>
+
+  <div id="confirmation-message">
+    <h3 style="color: #065f46; margin-top: 0;">Application Submitted!</h3>
+    <p>Thank you for applying to Hudson River Trading. Your application has been received.</p>
+    <p><strong>Confirmation ID:</strong> <span id="confirmation_id">HRT-2027-SWE-98412</span></p>
+  </div>
+</div>
+</body>
+</html>

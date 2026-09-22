@@ -1,0 +1,326 @@
+# Target Companies Configuration
+# Mapping each company to ATS type, board token or organization ID, careers URL, and industry category.
+# Companies using bespoke portals have documented "custom" reasons.
+
+companies:
+  # ==========================================
+  # Quant / Trading (21 companies)
+  # ==========================================
+  - name: "Optiver"
+    industry: "quant_trading"
+    ats: "smartrecruiters"
+    token: "Optiver"
+    careers_url: "https://optiver.com/working-at-optiver/career-opportunities/"
+    notes: "Primary campus recruiting through SmartRecruiters and direct portal."
+
+  - name: "Jane Street"
+    industry: "quant_trading"
+    ats: "custom"
+    reason: "Proprietary custom application portal at janestreet.com/join-jane-street/open-roles/"
+    careers_url: "https://www.janestreet.com/join-jane-street/open-roles/"
+
+  - name: "Hudson River Trading"
+    industry: "quant_trading"
+    ats: "greenhouse"
+    token: "hudsongivertrading"
+    careers_url: "https://www.hudsonrivertrading.com/careers/"
+
+  - name: "Citadel & Citadel Securities"
+    industry: "quant_trading"
+    ats: "custom"
+    reason: "Proprietary Citadel careers platform with Workday integration."
+    careers_url: "https://www.citadel.com/careers/open-roles/"
+
+  - name: "Two Sigma"
+    industry: "quant_trading"
+    ats: "greenhouse"
+    token: "twosigma"
+    careers_url: "https://www.twosigma.com/careers/"
+
+  - name: "IMC"
+    industry: "quant_trading"
+    ats: "greenhouse"
+    token: "imc"
+    careers_url: "https://careers.imc.com/"
+
+  - name: "DRW"
+    industry: "quant_trading"
+    ats: "lever"
+    token: "drw"
+    careers_url: "https://drw.com/on-campus"
+
+  - name: "SIG"
+    industry: "quant_trading"
+    ats: "custom"
+    reason: "Bespoke campus recruitment portal (BrassRing / IBM Kenexa backed)."
+    careers_url: "https://careers.sig.com/"
+
+  - name: "Jump Trading"
+    industry: "quant_trading"
+    ats: "greenhouse"
+    token: "jumptrading"
+    careers_url: "https://www.jumptrading.com/careers/"
+
+  - name: "Akuna Capital"
+    industry: "quant_trading"
+    ats: "greenhouse"
+    token: "akunacapital"
+    careers_url: "https://akunacapital.com/careers"
+
+  - name: "Five Rings"
+    industry: "quant_trading"
+    ats: "greenhouse"
+    token: "fiverings"
+    careers_url: "https://fiverings.com/careers/"
+
+  - name: "Tower Research"
+    industry: "quant_trading"
+    ats: "greenhouse"
+    token: "towerresearchcapital"
+    careers_url: "https://www.tower-research.com/open-positions"
+
+  - name: "Virtu Financial"
+    industry: "quant_trading"
+    ats: "greenhouse"
+    token: "virtufinancial"
+    careers_url: "https://www.virtu.com/careers/"
+
+  - name: "Radix Trading"
+    industry: "quant_trading"
+    ats: "lever"
+    token: "radixtrading"
+    careers_url: "https://www.radixtrading.com/careers"
+
+  - name: "Old Mission"
+    industry: "quant_trading"
+    ats: "greenhouse"
+    token: "oldmissioncapital"
+    careers_url: "https://www.oldmissioncapital.com/careers/"
+
+  - name: "Belvedere Trading"
+    industry: "quant_trading"
+    ats: "greenhouse"
+    token: "belvederetrading"
+    careers_url: "https://belvederetrading.com/careers/"
+
+  - name: "Flow Traders"
+    industry: "quant_trading"
+    ats: "smartrecruiters"
+    token: "FlowTraders"
+    careers_url: "https://www.flowtraders.com/careers"
+
+  - name: "XTX Markets"
+    industry: "quant_trading"
+    ats: "greenhouse"
+    token: "xtxmarkets"
+    careers_url: "https://www.xtxmarkets.com/careers/"
+
+  - name: "Millennium"
+    industry: "quant_trading"
+    ats: "custom"
+    reason: "Workday-backed proprietary portal requiring authenticated session cookies."
+    careers_url: "https://www.mlp.com/careers/"
+
+  - name: "Point72 / Cubist"
+    industry: "quant_trading"
+    ats: "greenhouse"
+    token: "point72"
+    careers_url: "https://point72.com/careers/"
+
+  - name: "D.E. Shaw"
+    industry: "quant_trading"
+    ats: "custom"
+    reason: "Proprietary campus recruiting portal at deshaw.com/careers."
+    careers_url: "https://www.deshaw.com/careers"
+
+  # ==========================================
+  # Big Tech + AI Labs (16 companies)
+  # ==========================================
+  - name: "Google / DeepMind"
+    industry: "big_tech_ai"
+    ats: "custom"
+    reason: "Bespoke Google Careers portal with custom OAuth and dynamic form builder."
+    careers_url: "https://www.google.com/about/careers/applications/jobs/results"
+
+  - name: "Meta"
+    industry: "big_tech_ai"
+    ats: "custom"
+    reason: "Bespoke Meta Careers portal (metacareers.com)."
+    careers_url: "https://www.metacareers.com/jobs"
+
+  - name: "Apple"
+    industry: "big_tech_ai"
+    ats: "custom"
+    reason: "Bespoke Apple Jobs portal (jobs.apple.com) with Apple ID authentication."
+    careers_url: "https://jobs.apple.com/"
+
+  - name: "Microsoft"
+    industry: "big_tech_ai"
+    ats: "custom"
+    reason: "Bespoke Microsoft Careers portal (jobs.careers.microsoft.com)."
+    careers_url: "https://jobs.careers.microsoft.com/"
+
+  - name: "Amazon / AWS"
+    industry: "big_tech_ai"
+    ats: "custom"
+    reason: "Bespoke Amazon.jobs candidate portal."
+    careers_url: "https://www.amazon.jobs/"
+
+  - name: "NVIDIA"
+    industry: "big_tech_ai"
+    ats: "workday"
+    tenant: "nvidia"
+    site_id: "NVIDIAExternalCareerSite"
+    token: "nvidia"
+    careers_url: "https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite"
+
+  - name: "OpenAI"
+    industry: "big_tech_ai"
+    ats: "ashby"
+    token: "openai"
+    careers_url: "https://openai.com/careers"
+
+  - name: "Anthropic"
+    industry: "big_tech_ai"
+    ats: "greenhouse"
+    token: "anthropic"
+    careers_url: "https://job-boards.greenhouse.io/anthropic"
+
+  - name: "Databricks"
+    industry: "big_tech_ai"
+    ats: "greenhouse"
+    token: "databricks"
+    careers_url: "https://www.databricks.com/company/careers"
+
+  - name: "Scale AI"
+    industry: "big_tech_ai"
+    ats: "greenhouse"
+    token: "scaleai"
+    careers_url: "https://scale.com/careers"
+
+  - name: "xAI"
+    industry: "big_tech_ai"
+    ats: "greenhouse"
+    token: "xai"
+    careers_url: "https://x.ai/careers"
+
+  - name: "Cohere"
+    industry: "big_tech_ai"
+    ats: "lever"
+    token: "cohere"
+    careers_url: "https://cohere.com/careers"
+
+  - name: "Mistral"
+    industry: "big_tech_ai"
+    ats: "lever"
+    token: "mistral"
+    careers_url: "https://mistral.ai/careers/"
+
+  - name: "Perplexity"
+    industry: "big_tech_ai"
+    ats: "ashby"
+    token: "perplexity"
+    careers_url: "https://www.perplexity.ai/hub/jobs"
+
+  - name: "Snowflake"
+    industry: "big_tech_ai"
+    ats: "workday"
+    tenant: "snowflake"
+    site_id: "SnowflakeCareers"
+    token: "snowflake"
+    careers_url: "https://snowflake.wd1.myworkdayjobs.com/SnowflakeCareers"
+
+  - name: "Palantir"
+    industry: "big_tech_ai"
+    ats: "lever"
+    token: "palantir"
+    careers_url: "https://www.palantir.com/careers/"
+
+  # ==========================================
+  # Fintech / Banks (14 companies)
+  # ==========================================
+  - name: "Stripe"
+    industry: "fintech_banks"
+    ats: "greenhouse"
+    token: "stripe"
+    careers_url: "https://stripe.com/jobs"
+
+  - name: "Robinhood"
+    industry: "fintech_banks"
+    ats: "greenhouse"
+    token: "robinhood"
+    careers_url: "https://robinhood.com/us/en/careers/"
+
+  - name: "Coinbase"
+    industry: "fintech_banks"
+    ats: "greenhouse"
+    token: "coinbase"
+    careers_url: "https://www.coinbase.com/careers"
+
+  - name: "Plaid"
+    industry: "fintech_banks"
+    ats: "lever"
+    token: "plaid"
+    careers_url: "https://plaid.com/careers/"
+
+  - name: "Ramp"
+    industry: "fintech_banks"
+    ats: "ashby"
+    token: "ramp"
+    careers_url: "https://ramp.com/careers"
+
+  - name: "Brex"
+    industry: "fintech_banks"
+    ats: "greenhouse"
+    token: "brex"
+    careers_url: "https://www.brex.com/careers"
+
+  - name: "Affirm"
+    industry: "fintech_banks"
+    ats: "greenhouse"
+    token: "affirm"
+    careers_url: "https://www.affirm.com/careers"
+
+  - name: "Bloomberg"
+    industry: "fintech_banks"
+    ats: "custom"
+    reason: "Bespoke Bloomberg Careers search and application system."
+    careers_url: "https://www.bloomberg.com/company/careers/"
+
+  - name: "Goldman Sachs Engineering"
+    industry: "fintech_banks"
+    ats: "custom"
+    reason: "Bespoke Goldman Sachs Summer Analyst application portal."
+    careers_url: "https://www.goldmansachs.com/careers/students/programs/americas/summer-analyst-program.html"
+
+  - name: "JPMorgan SEP"
+    industry: "fintech_banks"
+    ats: "custom"
+    reason: "Bespoke JPMorgan Chase Software Engineer Program portal (Taleo/Oracle)."
+    careers_url: "https://careers.jpmorgan.com/us/en/students/programs/software-engineer-summer-internship"
+
+  - name: "Morgan Stanley Technology"
+    industry: "fintech_banks"
+    ats: "custom"
+    reason: "Bespoke Morgan Stanley Technology Summer Analyst application portal."
+    careers_url: "https://www.morganstanley.com/careers/students-graduates/opportunities"
+
+  - name: "Capital One TIP"
+    industry: "fintech_banks"
+    ats: "workday"
+    tenant: "capitalone"
+    site_id: "Capital_One"
+    token: "capitalone"
+    careers_url: "https://capitalone.wd1.myworkdayjobs.com/Capital_One"
+
+  - name: "Squarepoint"
+    industry: "fintech_banks"
+    ats: "greenhouse"
+    token: "squarepointcapital"
+    careers_url: "https://www.squarepoint-capital.com/careers"
+
+  - name: "Bridgewater"
+    industry: "fintech_banks"
+    ats: "greenhouse"
+    token: "bridgewater"
+    careers_url: "https://www.bridgewater.com/careers"

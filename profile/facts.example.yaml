@@ -1,0 +1,147 @@
+# ==============================================================================
+# Candidate Facts Bank Template (facts.yaml)
+# Copy this file to profile/facts.yaml and customize with your achievements:
+#   cp profile/facts.example.yaml profile/facts.yaml
+#
+# ZERO FABRICATION GUARANTEE:
+# The Tailoring Agent can ONLY assert claims that reference atomic IDs defined here.
+# If an application asks a question unsupported by these facts, the assistant outputs:
+#   [NEEDS INPUT: <Candidate> facts bank does not contain verifiable claims for...]
+# ==============================================================================
+
+candidate:
+  id: "cand.user"
+  name: "Jane Doe"
+  school: "State University"
+  gpa: "3.85 / 4.00"
+  graduation: "May 2028"
+  major: "Computer Science"
+  minor: "Mathematics"
+
+education:
+  - id: "edu.university.bs"
+    institution: "State University, College of Computing"
+    degree: "Bachelor of Science in Computer Science, Minor in Mathematics"
+    dates: "Aug 2024 – Expected May 2028"
+    gpa: "3.85/4.00"
+    honors: "Dean's Honor List"
+
+coursework:
+  - id: "course.cs101"
+    code: "CS 101"
+    name: "Data Structures and Algorithms"
+    grade: "A"
+    topics: ["Trees", "Graphs", "Hash Tables", "Dynamic Programming", "Algorithm Complexity"]
+  - id: "course.cs201"
+    code: "CS 201"
+    name: "Software Design & Architecture"
+    grade: "A"
+    topics: ["Object-Oriented Design", "C++", "Design Patterns", "Unit Testing"]
+  - id: "course.cs301"
+    code: "CS 301"
+    name: "Operating Systems & Concurrency"
+    grade: "A"
+    topics: ["Concurrency", "Virtual Memory", "Kernel Architecture", "File Systems", "Multithreading"]
+  - id: "course.math101"
+    code: "MATH 101"
+    name: "Linear Algebra & Optimization"
+    grade: "A"
+    topics: ["Matrix Decompositions", "Eigenvalues", "Vector Spaces"]
+
+skills:
+  languages:
+    - id: "skill.lang.python"
+      name: "Python"
+      level: "Proficient"
+      context: "AsyncIO, NumPy, Pandas, FastAPI, Pytest, backend development"
+    - id: "skill.lang.cpp"
+      name: "C++"
+      level: "Proficient"
+      context: "C++17/20, STL, memory management, multithreading, low latency"
+    - id: "skill.lang.c"
+      name: "C"
+      level: "Working Knowledge"
+      context: "Systems programming, POSIX threads, socket programming"
+    - id: "skill.lang.sql"
+      name: "SQL"
+      level: "Proficient"
+      context: "PostgreSQL, SQLite, query optimization, relational schema design"
+    - id: "skill.lang.rust"
+      name: "Rust"
+      level: "Familiar"
+      context: "Memory safety, concurrency, Cargo"
+  systems_and_tools:
+    - id: "skill.tool.git"
+      name: "Git"
+      context: "Branching strategies, CI/CD actions, code reviews"
+    - id: "skill.tool.docker"
+      name: "Docker"
+      context: "Containerization, multi-stage builds, compose"
+    - id: "skill.tool.linux"
+      name: "Linux"
+      context: "Bash scripting, systemd, perf profiling"
+
+experience:
+  - id: "exp.research_lab"
+    role: "Undergraduate Research Assistant"
+    organization: "Distributed Systems & Systems Lab"
+    location: "Campus"
+    dates: "Jan 2025 – Present"
+    bullets:
+      - id: "exp.lab.b1"
+        text: "Designed and benchmarked distributed telemetry ingestion in Python and C++, reducing latency by 35%."
+        keywords: ["C++", "Python", "Benchmarking", "Distributed Systems"]
+      - id: "exp.lab.b2"
+        text: "Built high-frequency data structures across IPC barriers with zero memory leaks."
+        keywords: ["IPC", "Concurrency", "Lock-free"]
+      - id: "exp.lab.b3"
+        text: "Maintained automated testing suites achieving 90%+ branch test coverage."
+        keywords: ["Testing", "Pytest", "CI/CD"]
+
+projects:
+  - id: "proj.distributed_kv"
+    title: "Distributed Key-Value Store"
+    technologies: ["C++20", "gRPC", "Protobuf", "Docker"]
+    repo: "https://github.com/janedoe/raft-kv"
+    dates: "Fall 2025"
+    bullets:
+      - id: "proj.kv.b1"
+        text: "Engineered a fault-tolerant key-value store in modern C++ implementing the Raft consensus algorithm."
+        keywords: ["Raft", "C++", "Consensus", "Distributed Systems"]
+      - id: "proj.kv.b2"
+        text: "Implemented state compaction and cluster recovery handling partitions in under 300ms."
+        keywords: ["Fault Tolerance", "Recovery", "Concurrency"]
+      - id: "proj.kv.b3"
+        text: "Validated linearizability and consistency under chaotic network partition tests."
+        keywords: ["Linearizability", "Verification", "Testing"]
+
+  - id: "proj.limit_order_book"
+    title: "High-Throughput Limit Order Book Matching Engine"
+    technologies: ["C++17", "Python", "Google Benchmark"]
+    repo: "https://github.com/janedoe/matching-engine"
+    dates: "Summer 2025"
+    bullets:
+      - id: "proj.lob.b1"
+        text: "Engineered a price-time-priority limit order book in C++ with custom doubly-linked lists."
+        keywords: ["C++", "Low Latency", "Matching Engine", "Data Structures"]
+      - id: "proj.lob.b2"
+        text: "Achieved sub-microsecond execution latencies on simulated market data feeds."
+        keywords: ["Performance", "Benchmarking"]
+
+  - id: "proj.ml_inference_opt"
+    title: "Asynchronous ML Inference Gateway"
+    technologies: ["Python", "FastAPI", "AsyncIO", "PyTorch"]
+    repo: "https://github.com/janedoe/async-gateway"
+    dates: "Spring 2025"
+    bullets:
+      - id: "proj.infer.b1"
+        text: "Constructed an asynchronous batching gateway using FastAPI and AsyncIO to optimize GPU utilization."
+        keywords: ["FastAPI", "AsyncIO", "Python", "Batching"]
+      - id: "proj.infer.b2"
+        text: "Reduced P99 response latency by 30% under peak concurrent requests."
+        keywords: ["Performance", "Concurrency", "Optimization"]
+
+awards:
+  - id: "award.deans_list"
+    title: "Dean's Honor List"
+    dates: "2024 – 2025"

@@ -1,0 +1,29 @@
+[project]
+name = "internship-agents"
+version = "0.1.0"
+description = "Semi-automated multi-agent assistant for discovering, ranking, tailoring, and pre-filling Summer 2027 SWE internship applications."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "claude-agent-sdk>=0.2.0",
+    "playwright>=1.40.0",
+    "sqlalchemy>=2.0.0",
+    "pydantic>=2.0.0",
+    "typer>=0.12.0",
+    "pyyaml>=6.0",
+    "openpyxl>=3.1.0",
+    "beautifulsoup4>=4.12.0",
+    "httpx>=0.27.0",
+    "pytest>=8.0.0",
+    "google-api-python-client>=2.0.0",
+    "google-auth-oauthlib>=1.0.0",
+    "google-auth-httplib2>=0.2.0",
+    "gspread>=6.0.0",
+]
+
+[project.scripts]
+ia = "cli:app"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

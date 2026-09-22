@@ -1,0 +1,79 @@
+# ==============================================================================
+# Git Ignore Configuration for Internship Application Assistant
+# STRICT PRIVACY & ZERO-LEAK GUARANTEE
+# ==============================================================================
+
+# OS & Editor generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Python byte code and caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments & local env files
+.venv/
+env/
+venv/
+ENV/
+.env
+.env.local
+
+# Candidate Private Personal Information (PII)
+# (Keep *.example.yaml templates tracked; strictly ignore personal files)
+profile/profile.yaml
+profile/facts.yaml
+profile/*.pdf
+profile/variants/*.md
+!profile/variants/*.example.md
+
+# Database runtime files & snapshots
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+internships.db
+reports/backups/
+
+# Excel spreadsheets & exported pipelines
+tracker.xlsx
+tracker_*.xlsx
+*.xlsx
+*.csv
+
+# Runtime artifacts (form dumps, screenshots, review packets)
+artifacts/*
+!artifacts/.gitkeep
+
+# Generated daily reports and scheduled logs
+reports/*
+!reports/.gitkeep
+
+# Cloud Credentials & OAuth Tokens
+config/service_account.json
+config/credentials.json
+config/token.json
+service_account*.json
+credentials*.json
+token*.json
+client_secrets*.json
+
+# Playwright & Browser caches
+.playwright/
+test-results/
+playwright-report/

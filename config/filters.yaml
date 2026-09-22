@@ -1,0 +1,65 @@
+# Filter & Ranking Rules Configuration
+
+limits:
+  daily_submission_cap: 100
+  daily_budget_dollars: 200.0
+  max_applications_per_run: 20
+
+hard_filters:
+  role:
+    # Must match engineering / developer / systems / ML infra keywords
+    include_patterns:
+      - '(?i)\b(intern|internship|co-op|coop|summer\s+analyst)\b'
+      - '(?i)\b(software|swe|engineer|engineering|developer|dev|systems|quant(?:itative)?\s+dev(?:eloper)?|research\s+engineer|infrastructure|infra|platform|backend|distributed)\b'
+    # Exclude non-engineering roles
+    exclude_patterns:
+      - '(?i)\b(product\s+manager|technical\s+product\s+manager|program\s+manager)\b'
+      - '(?i)\b(data\s+analyst|business\s+analyst|financial\s+analyst)\b'
+      - '(?i)\b(it\s+support|helpdesk|desktop\s+support|technician)\b'
+      - '(?i)\b(hardware-only|asic|pcb|fpga-only|mechanical)\b'
+    # Roles tagged as adjacent (retained in DB with adjacent tag, not hard rejected)
+    adjacent_patterns:
+      - '(?i)\b(quant(?:itative)?\s+research(?:er)?|qr|trader|trading\s+intern)\b'
+      - '(?i)\b(machine\s+learning\s+research|ai\s+researcher)\b'
+
+  # Exclude roles requiring government security clearance by default
+  clearance_exclusion_patterns:
+    - '(?i)\b(active\s+security\s+clearance|secret\s+clearance|top\s+secret|ts/sci|polygraph|dod\s+clearance)\b'
+
+  term:
+    target_terms:
+      - "Summer 2027"
+      - "Summer '27"
+      - "2027"
+      - "class of 2028"
+    probable_date_threshold: "2026-08-01"
+
+  locations:
+    primary:
+      - name: "New York City"
+        aliases: ["New York", "NYC", "NY", "New York, NY", "Manhattan"]
+        fit: 1.0
+      - name: "SF Bay Area"
+        aliases: ["San Francisco", "SF", "San Francisco, CA", "Bay Area", "Palo Alto", "Mountain View", "Sunnyvale", "Menlo Park", "San Jose"]
+        fit: 0.85
+      - name: "Chicago"
+        aliases: ["Chicago, IL", "Chicago"]
+        fit: 0.70
+      - name: "Seattle"
+        aliases: ["Seattle, WA", "Bellevue", "Redmond"]
+        fit: 0.70
+      - name: "Remote"
+        aliases: ["Remote", "Remote (US)", "United States - Remote", "Virtual"]
+        fit: 0.70
+
+scoring_weights:
+  industry_fit: 0.35
+  location_fit: 0.25
+  skills_overlap: 0.20
+  deadline_urgency: 0.10
+  prestige_prior: 0.10
+
+candidate_preferences:
+  languages: ["Python", "C++", "Go", "Rust", "TypeScript"]
+  domains: ["security-research", "ml-infra", "distributed-systems", "high-performance-computing"]
+  bullet_rewriting_allowed: true
