@@ -162,24 +162,55 @@ class TailoringAgent:
         gpa = self.profile.get("education", {}).get("gpa", "3.90")
         grad = self.profile.get("education", {}).get("graduation_expected", "May 2028")
 
-        # Select relevant project
+        # Select relevant project / experience highlight
+        exp_doable_exists = self.facts.has_fact("exp.doable_ai")
         if job.industry == "quant_trading":
-            proj_highlight = (
-                f"At {school}, I designed and benchmarked a high-throughput Limit Order Book matching engine in modern C++ "
-                "(achieving 42ns median matching latency on simulated NASDAQ ITCH market data), and built a fault-tolerant "
-                "distributed key-value store using the Raft consensus algorithm."
-            )
-        elif "infra" in role.lower() or "systems" in role.lower() or "distributed" in role.lower():
-            proj_highlight = (
-                "My technical focus centers on distributed systems and systems programming. I built a fault-tolerant Raft-based "
-                "distributed key-value store in C++20 with linearizable state machine replication, and engineered an asynchronous ML "
-                "inference gateway in Python with FastAPI and AsyncIO that doubled GPU utilization."
+            if self.facts.has_fact("proj.nfl_pred_market"):
+                proj_highlight = (
+                    f"At {school}, I developed an algorithmic data pipeline analyzing NFL market movements and Polymarket order books across "
+                    "PostgreSQL and Google Cloud Storage. Drawing from my USACO Gold foundation and experience teaching competitive programming "
+                    "in C++, I thrive in fast-paced environments requiring rigorous quantitative and algorithmic thinking."
+                )
+            else:
+                proj_highlight = (
+                    f"At {school}, I developed an extensive foundation in C++ algorithms, low-latency architectures, and rigorous mathematics, "
+                    "preparing me to tackle complex trading infrastructure challenges."
+                )
+        elif "infra" in role.lower() or "systems" in role.lower() or "distributed" in role.lower() or "cloud" in role.lower():
+            if exp_doable_exists:
+                proj_highlight = (
+                    "During my software engineering internship at Doable.ai, I led the migration of our QA platform from Compute Engine VMs to GKE, "
+                    "containerizing Next.js and FastAPI services with Kustomize and GitHub Actions CI/CD. I engineered resilient Kubernetes Jobs "
+                    "with PostgreSQL persistence and durably tracked backend generation tasks to ensure zero dropped jobs across deploys."
+                )
+            else:
+                proj_highlight = (
+                    f"My technical focus centers on distributed systems and cloud infrastructure. At {school}, my coursework in Operating Systems "
+                    "and hands-on container orchestration experience have prepared me to solve complex platform scaling challenges."
+                )
+        else:
+            if exp_doable_exists:
+                proj_highlight = (
+                    "My engineering experience bridges cloud infrastructure, backend microservices, and media processing pipelines. At Doable.ai, "
+                    "I migrated core services to GKE, enhanced deployment resilience, and supported SOC 2 security. At Utopai Studios, I optimized "
+                    "parallel FFmpeg video pipelines for 3x throughput, integrating speech-to-text and LLM tagging."
+                )
+            else:
+                proj_highlight = (
+                    "My academic and project experience bridges low-level systems programming and high-performance Python services. "
+                    f"From containerizing backend microservices to excelling in rigorous coursework at {school}, I prioritize high-reliability code."
+                )
+
+        if exp_doable_exists:
+            exp_highlight = (
+                "Across my internships at Doable.ai and Utopai Studios, I demonstrated a track record of driving mission-critical migrations, "
+                "resolving performance bottlenecks, and shipping resilient cloud services. As a USACO Instructor at X-Camp, I also mentored students "
+                "in advanced C++ data structures and algorithmic complexity."
             )
         else:
-            proj_highlight = (
-                "My academic and project experience bridges low-level C++ systems programming and high-performance Python services. "
-                "From implementing the Raft consensus algorithm from scratch in C++20 to serving as an Undergraduate Research Fellow "
-                f"at {school}, I prioritize high-reliability, well-tested code."
+            exp_highlight = (
+                "Through my software engineering projects and technical coursework, I demonstrated a track record of diagnosing bottlenecks, "
+                "designing clean modular architectures, and maintaining high automated regression test coverage."
             )
 
         contact_line = " | ".join(filter(None, [cand_email, cand_phone]))
@@ -191,7 +222,7 @@ I am writing to express my strong enthusiasm for the {role} position for Summer 
 
 {proj_highlight}
 
-As an Undergraduate Research Fellow, I designed distributed tracing and low-latency IPC daemons in C++ and Python, maintaining high regression test coverage. As a Teaching Assistant for Data Structures, I mentored students on asymptotic analysis, graph algorithms, and memory debugging.
+{exp_highlight}
 
 I am authorized to work in the United States without visa sponsorship. I would welcome the opportunity to contribute my software engineering foundation and dedication to the engineering team at {company}.
 
@@ -213,11 +244,10 @@ Sincerely,
         all_fids = self.facts.all_ids()
         cand_id = next((k for k in all_fids if k.startswith("cand.")), "cand.candidate")
         edu_id = next((k for k in all_fids if k.startswith("edu.")), "edu.school")
-        course_os = next((k for k in all_fids if "3281" in k or "os" in k or k.startswith("course.")), edu_id)
-        proj_lob = next((k for k in all_fids if "limit_order_book" in k or "lob" in k), next((k for k in all_fids if k.startswith("proj.")), cand_id))
-        proj_kv = next((k for k in all_fids if "distributed_kv" in k or "raft" in k), next((k for k in all_fids if k.startswith("proj.")), cand_id))
-        proj_ml = next((k for k in all_fids if "inference" in k or "ml" in k), next((k for k in all_fids if k.startswith("proj.")), cand_id))
-        exp_research = next((k for k in all_fids if k.startswith("exp.")), cand_id)
+        course_os = next((k for k in all_fids if "os" in k or "3281" in k or k.startswith("course.")), edu_id)
+        proj_market = next((k for k in all_fids if "nfl" in k or "market" in k or "lob" in k or "limit_order_book" in k), next((k for k in all_fids if k.startswith("proj.")), cand_id))
+        proj_infra = next((k for k in all_fids if "doable" in k or "raft" in k or "kv" in k), next((k for k in all_fids if k.startswith("proj.")), cand_id))
+        exp_primary = next((k for k in all_fids if "doable" in k or "utopai" in k or k.startswith("exp.")), cand_id)
 
         school = self.profile.get("education", {}).get("institution", "university")
         cand_name = self.profile.get("personal", {}).get("full_name", "Candidate")
@@ -227,58 +257,74 @@ Sincerely,
             if job.industry == "quant_trading":
                 ans = (
                     f"I am drawn to {job.company} because of the intersection of high-performance systems engineering, "
-                    f"rigorous mathematics, and algorithmic problem-solving. My work developing a C++ Limit Order Book matching "
-                    f"engine and Raft consensus key-value store reinforced my passion for microsecond-critical software architecture."
+                    f"rigorous mathematics, and algorithmic problem-solving. My work analyzing Polymarket prediction order books, "
+                    f"building data pipelines, and competing in USACO Gold reinforced my passion for quantitative engineering."
                 )
-                raw_cits = [cand_id, edu_id, proj_lob, proj_kv, "skill.lang.cpp"]
-                citations = [c for c in raw_cits if self.facts.has_fact(c)]
+                raw_cits = [cand_id, edu_id, proj_market, "skill.lang.cpp", "skill.lang.python"]
             elif job.industry == "big_tech_ai":
                 ans = (
                     f"I am eager to contribute to {job.company} because of the opportunity to tackle distributed infrastructure "
-                    f"and systems scaling at world-class velocity. At {school}, my coursework in Operating Systems and projects in "
-                    f"Raft consensus and asynchronous ML inference batching have prepared me to solve complex distributed platform challenges."
+                    f"and systems scaling at world-class velocity. At {school}, my coursework in Operating Systems and internships "
+                    f"migrating microservices to GKE and optimizing parallel video processing prepare me to solve complex platform challenges."
                 )
-                raw_cits = [cand_id, edu_id, course_os, proj_kv, proj_ml]
-                citations = [c for c in raw_cits if self.facts.has_fact(c)]
+                raw_cits = [cand_id, edu_id, course_os, exp_primary, "skill.tool.k8s"]
             else:
                 ans = (
                     f"I am excited about {job.company}'s engineering track because of the opportunity to build mission-critical, "
-                    f"scalable financial technology. My background in distributed systems (Raft C++ key-value store) and high-concurrency "
+                    f"scalable software. My background in containerizing microservices on GKE and building high-concurrency "
                     f"Python services aligns directly with your platform engineering standards."
                 )
-                raw_cits = [cand_id, edu_id, proj_kv, proj_ml]
-                citations = [c for c in raw_cits if self.facts.has_fact(c)]
+                raw_cits = [cand_id, edu_id, exp_primary, "skill.lang.python"]
+            citations = [c for c in raw_cits if self.facts.has_fact(c)]
 
         # 2. Describe a project / challenging technical work
         elif any(k in q_lower for k in ["project", "technical achievement", "challenging problem", "built"]):
-            ans = (
-                "My most challenging technical project was engineering a fault-tolerant distributed key-value store from scratch "
-                "in C++20 implementing the Raft consensus algorithm. I implemented leader election, log replication, state snapshotting, "
-                "and dynamic membership changes handling cluster partition recovery in under 250ms. I verified linearizability and cluster "
-                "durability under chaotic network partition faults using Jepsen-style automated injection."
-            )
-            raw_cits = [proj_kv, "proj.kv.b1", "proj.kv.b2", "proj.kv.b3", "skill.lang.cpp"]
+            if self.facts.has_fact("exp.doable_ai"):
+                ans = (
+                    "At Doable.ai, I led the migration of our QA platform from a Compute Engine VM to Google Kubernetes Engine (GKE), "
+                    "containerizing Next.js and FastAPI microservices with Kustomize and GitHub Actions CI/CD. To ensure long-running test "
+                    "execution was resilient across deployments, I isolated test execution in Kubernetes Jobs with run state persisted to "
+                    "Postgres, and durably tracked in-process generation tasks so they auto-retry on restart, allowing in-flight work to self-heal."
+                )
+                raw_cits = ["exp.doable_ai", "exp.doable.b1", "exp.doable.b2", "skill.tool.k8s", "skill.lang.python"]
+            else:
+                ans = (
+                    "My most challenging technical project was engineering a fault-tolerant distributed key-value store from scratch "
+                    "in C++20 implementing the Raft consensus algorithm. I implemented leader election, log replication, state snapshotting, "
+                    "and dynamic membership changes handling cluster partition recovery in under 250ms. I verified linearizability and cluster "
+                    "durability under chaotic network partition faults using Jepsen-style automated injection."
+                )
+                raw_cits = [proj_infra, "proj.kv.b1", "proj.kv.b2", "proj.kv.b3", "skill.lang.cpp"]
             citations = [c for c in raw_cits if self.facts.has_fact(c)]
 
         # 3. Debugging / Troubleshooting experience
         elif any(k in q_lower for k in ["debug", "troubleshoot", "bug", "failure"]):
-            ans = (
-                "While building custom lock-free ring buffers in C++ for telemetry streaming at an undergraduate research lab, "
-                "I encountered intermittent memory corruption under high concurrency across IPC boundaries. Using Valgrind and thread sanitizers, "
-                "I tracked the issue to subtle memory-order race conditions in atomic load/store fences. I resolved it by adopting acquire-release "
-                "memory semantics, reducing ingestion latency by 38% while achieving high automated regression test coverage."
-            )
-            raw_cits = [exp_research, "exp.isis.b1", "exp.isis.b2", "exp.isis.b3", "skill.lang.cpp", "skill.tool.docker"]
+            if self.facts.has_fact("exp.utopai_studios"):
+                ans = (
+                    "At Utopai Studios, I profiled an end-to-end video analysis pipeline using PySceneDetect and parallel FFmpeg to isolate "
+                    "a critical execution bottleneck, optimizing concurrency to achieve 3x throughput while enriching outputs with face recognition "
+                    "and WhisperX speech-to-text. Additionally, at Doable.ai, I triaged 2,000+ GCP Security Command Center findings, separating "
+                    "container vulnerabilities from cloud misconfigurations, enabling managed upgrades and removing exposed firewall rules for SOC 2 readiness."
+                )
+                raw_cits = ["exp.utopai_studios", "exp.utopai.b1", "exp.doable_ai", "exp.doable.b3", "skill.framework.ffmpeg"]
+            else:
+                ans = (
+                    "While building custom lock-free ring buffers in C++ for telemetry streaming at an undergraduate research lab, "
+                    "I encountered intermittent memory corruption under high concurrency across IPC boundaries. Using Valgrind and thread sanitizers, "
+                    "I tracked the issue to subtle memory-order race conditions in atomic load/store fences. I resolved it by adopting acquire-release "
+                    "memory semantics, reducing ingestion latency by 38% while achieving high automated regression test coverage."
+                )
+                raw_cits = [exp_primary, "skill.lang.cpp", "skill.tool.docker"]
             citations = [c for c in raw_cits if self.facts.has_fact(c)]
 
         # 4. Programming Languages & Skills
         elif any(k in q_lower for k in ["languages", "programming language", "technologies", "tech stack", "skills"]):
             ans = (
-                "I am proficient in modern C++ (C++17/20, STL, template metaprogramming, RAII, memory debugging) and Python (AsyncIO, "
-                "FastAPI, PyTorch, Pytest). I also have working experience with C for systems programming, SQL (SQLite/PostgreSQL) for relational "
-                "storage, and familiar knowledge of Rust for safe concurrency."
+                "I am proficient in Python and C++, with intermediate experience in Java, JavaScript/TypeScript, Bash, and Rust. "
+                "For cloud infrastructure and backend systems, I work extensively with Kubernetes (GKE), Docker, Kustomize, "
+                "GitHub Actions CI/CD, FastAPI, Next.js, and PostgreSQL."
             )
-            raw_cits = ["skill.lang.cpp", "skill.lang.python", "skill.lang.c", "skill.lang.sql", "skill.lang.rust"]
+            raw_cits = ["skill.lang.python", "skill.lang.cpp", "skill.tool.k8s", "skill.tool.docker", "skill.lang.sql"]
             citations = [c for c in raw_cits if self.facts.has_fact(c)]
 
         # 5. Work Authorization / Sponsorship
