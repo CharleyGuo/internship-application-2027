@@ -26,9 +26,103 @@ class TrackerAgent:
         self.reports_dir = self.project_root / "reports"
         self.reports_dir.mkdir(parents=True, exist_ok=True)
 
+    def should_exclude_role(self, title: str) -> bool:
+        """Filter out non-target roles per user criteria:
+        1) Data Engineer
+        2) Machine Learning Engineer
+        3) AI Engineer
+        4) Analyst
+        5) System Engineer (preserving general SWE roles with systems specialty)
+        6) Research Intern
+        7) PhD and MS only (keep if undergrad/BS eligible)
+        8) Test Developer / SDET / QA
+        """
+        if not title:
+            return True
+        t = str(title).lower().strip()
+
+        # 1. PhD and MS only
+        if (re.search(r'\b(phd|ph\.d)\b', t) or 
+            re.search(r'\bms\s*(only|\/phd)\b', t) or 
+            re.search(r'\bmasters?\s*(only|\/phd)?\b', t) or 
+            re.search(r'\bgrad(uate)?\s+(researcher|program)\b', t) or
+            re.search(r'\(phd\)', t) or 
+            re.search(r'\(ms\)', t) or 
+            re.search(r'\(ms\/phd\)', t) or 
+            re.search(r'\(phd\/ms\)', t)):
+            if not re.search(r'\b(bs|undergrad(uate)?|bachelor)\b', t):
+                return True
+
+        # 2. Test Developer / SDET / QA / Test Engineer / Automated Test
+        if (re.search(r'\btest\s+developer\b', t) or 
+            re.search(r'\bsoftware\s+(engineer\s+in\s+)?test\b', t) or 
+            re.search(r'\bsdet\b', t) or 
+            re.search(r'\btest\s+engineer(ing)?\b', t) or 
+            re.search(r'\bqa\b', t) or 
+            re.search(r'\bquality\s+(engineer|assurance)\b', t) or
+            re.search(r'\bautomated\s+test\b', t) or
+            re.search(r'\bbehavior\s+test\b', t) or
+            re.search(r'\btest\s+(intern|co-op|coop)\b', t)):
+            return True
+
+        # 3. Data Engineer
+        if (re.search(r'\bdata\s+engineer(ing)?\b', t) or
+            re.search(r'\bdata\s+(platform|infrastructure)\s+engineer\b', t) or
+            re.search(r'\b(associate|it|campus)?\s*data\s+engineer\b', t) or
+            re.search(r'\bdata\s+science\b', t) or
+            re.search(r'\bdata\s+scientist\b', t) or
+            re.search(r'\bdata\s+&\s+analytics\s+engineering\b', t) or
+            re.search(r'\bdata\s+platform\s+engineering\b', t) or
+            re.search(r'\bsoftware\s+engineer.*data\s+analytics\b', t) or
+            re.search(r'software\/data\s+engineering', t)):
+            return True
+
+        # 4. Machine Learning Engineer
+        if (re.search(r'\b(machine\s+learning|ml)\s+engineer(ing)?\b', t) or
+            re.search(r'\b(machine\s+learning|ml)\s+(software\s+)?engineer\b', t) or
+            re.search(r'\b(machine\s+learning|ml)\s+infrastructure\s+engineer\b', t) or
+            re.search(r'\bsoftware\s+engineer.*(machine\s+learning|ml\b)', t) or
+            re.search(r'\bml\s+model\b', t)):
+            return True
+
+        # 5. AI Engineer
+        if (re.search(r'\b(ai|artificial\s+intelligence)\s+(software\s+|solution\s+|feature\s+)?(engineer(ing)?|developer)\b', t) or
+            re.search(r'\bai\s+engineer\b', t) or
+            re.search(r'\bai\s+(solutions?|feature)\s+development\b', t) or
+            re.search(r'\bai\s+agent\s+development\b', t) or
+            re.search(r'\bsoftware\s+engineer.*(ai\s+research|ai\/ml)', t) or
+            re.search(r'\bai\/ml\s+(infrastructure\s+)?engineer\b', t) or
+            re.search(r'\bsoftware\s+development\s+intern\s+-\s+ai\b', t) or
+            re.search(r'\brpa\s+&\s+agentic\s+ai\b', t) or
+            re.search(r'\bai\s+model\s+optimization\b', t)):
+            return True
+
+        # 6. Analyst
+        if re.search(r'\banalyst\b', t):
+            return True
+
+        # 7. System Engineer
+        # Exclude direct systems engineer roles, but preserve SWE roles with systems specialty (like 'Software Engineer Intern - Systems & Core Tech')
+        if (re.search(r'\b(campus\s+|cic\s+|trading\s+)?systems?\s+engineer(ing)?\b', t) or
+            re.search(r'\bembedded\s+systems\s+intern\b', t)):
+            if not re.search(r'\bsoftware\s+engineer\b', t) or re.search(r'^systems?\s+engineer', t) or re.search(r'[\/\-]\s*systems?\s+engineer(ing)?', t):
+                return True
+
+        # 8. Research Intern
+        if (re.search(r'\bresearch(er)?\s+(intern|program)\b', t) or
+            re.search(r'\bresearch\s*(&|and)\s*development\b', t) or
+            re.search(r'\br&d\s+engineer\b', t) or
+            re.search(r'\bresearch\s+engineer\b', t) or
+            re.search(r'\bquantitative\s+research\b', t)):
+            return True
+
+        return False
+
     def is_swe_intern_role(self, title: str) -> bool:
         """Determine if role title is a Software Engineering / Developer intern role."""
         if not title:
+            return False
+        if self.should_exclude_role(title):
             return False
         t = str(title).lower().strip()
         
@@ -530,38 +624,67 @@ class TrackerAgent:
         # Sort rows
         if sort_by == "industry_score":
             from collections import defaultdict
-            by_industry = defaultdict(list)
+
+            # Identify in-progress companies
+            in_prog_statuses = {"in_process", "phone", "oa", "onsite", "offer"}
+            in_prog_comps = set()
             for r in filtered_rows:
-                k = self.industry_priority_key(r[3])
-                by_industry[k].append(r)
+                st = str(r[5] or "").strip().lower()
+                if st in in_prog_statuses:
+                    in_prog_comps.add(str(r[0] or "").strip())
+
+            by_comp = defaultdict(list)
+            for r in filtered_rows:
+                comp_name = str(r[0] or "").strip()
+                by_comp[comp_name].append(r)
+
+            comp_avg = {}
+            comp_ind_prio = {}
+            for comp_name, comp_rows in by_comp.items():
+                scores = [float(r[6]) for r in comp_rows if r[6] is not None and isinstance(r[6], (int, float))]
+                comp_avg[comp_name] = sum(scores) / len(scores) if scores else 0.0
+                comp_ind_prio[comp_name] = min(self.industry_priority_key(r[3]) for r in comp_rows)
 
             sorted_rows = []
-            for ind_k in sorted(by_industry.keys()):
-                ind_rows = by_industry[ind_k]
-                by_comp = defaultdict(list)
-                for r in ind_rows:
-                    comp_name = str(r[0] or "").strip()
-                    by_comp[comp_name].append(r)
 
-                comp_avg = {}
-                for comp_name, comp_rows in by_comp.items():
-                    scores = [float(r[6]) for r in comp_rows if r[6] is not None and isinstance(r[6], (int, float))]
-                    avg = sum(scores) / len(scores) if scores else 0.0
-                    comp_avg[comp_name] = avg
+            # Tier 0: In-progress companies on top
+            # Sorted by company average rank score descending, then company name A-Z
+            in_prog_comps_sorted = sorted(
+                [c for c in by_comp.keys() if c in in_prog_comps],
+                key=lambda c: (-comp_avg[c], c.lower())
+            )
+            for comp_name in in_prog_comps_sorted:
+                c_rows = sorted(
+                    by_comp[comp_name],
+                    key=lambda r: (
+                        -(float(r[6]) if r[6] is not None and isinstance(r[6], (int, float)) else 0.0),
+                        self.location_priority_sort_key(r[2]),
+                        str(r[1] or "").lower()
+                    )
+                )
+                sorted_rows.extend(c_rows)
 
-                sorted_comps = sorted(by_comp.keys(), key=lambda c: (-comp_avg[c], c.lower()))
+            # Tier 1: Non-in-progress companies grouped by Industry priority
+            non_in_prog_by_ind = defaultdict(list)
+            for c in by_comp.keys():
+                if c not in in_prog_comps:
+                    non_in_prog_by_ind[comp_ind_prio[c]].append(c)
 
-                for comp_name in sorted_comps:
-                    c_rows = by_comp[comp_name]
-                    sorted_c_rows = sorted(
-                        c_rows,
+            for ind_prio in sorted(non_in_prog_by_ind.keys()):
+                comps_in_ind = sorted(
+                    non_in_prog_by_ind[ind_prio],
+                    key=lambda c: (-comp_avg[c], c.lower())
+                )
+                for comp_name in comps_in_ind:
+                    c_rows = sorted(
+                        by_comp[comp_name],
                         key=lambda r: (
                             -(float(r[6]) if r[6] is not None and isinstance(r[6], (int, float)) else 0.0),
                             self.location_priority_sort_key(r[2]),
                             str(r[1] or "").lower()
                         )
                     )
-                    sorted_rows.extend(sorted_c_rows)
+                    sorted_rows.extend(c_rows)
         elif sort_by == "company":
             sorted_rows = sorted(
                 filtered_rows,
