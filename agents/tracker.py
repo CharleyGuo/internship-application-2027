@@ -117,6 +117,18 @@ class TrackerAgent:
         # Priority 4: All other locations (alphabetical)
         return (4, l.strip())
 
+    def industry_priority_key(self, industry: Optional[str]) -> int:
+        """Map industry to priority index: Quant Trading (0), Fintech Banks (1), Big Tech Ai (2), Other (3)."""
+        s = str(industry or '').strip().lower()
+        if 'quant' in s:
+            return 0
+        elif 'fintech' in s or 'bank' in s:
+            return 1
+        elif 'big tech' in s or 'ai' in s:
+            return 2
+        else:
+            return 3
+
     def _determine_next_action(self, status: str, company: str) -> str:
         """Map application status to clear next action for human candidate."""
         mapping = {
@@ -404,9 +416,9 @@ class TrackerAgent:
 
         return target_file
 
-    def export_excel(self, output_path: Optional[Path] = None, sort_by: str = "company") -> Path:
+    def export_excel(self, output_path: Optional[Path] = None, sort_by: str = "industry_score") -> Path:
         """Export single source of truth SQLite database to styled Excel spreadsheet (tracker.xlsx).
-        Filters only SWE intern roles, sorts by Company -> Role -> Location priority,
+        Filters only SWE intern roles, sorts by Industry -> Company Avg Score -> Opening Score (default),
         preserves master records, and includes Trading Companies tab.
         """
         target_file = output_path or (self.project_root / "tracker.xlsx")
@@ -468,36 +480,89 @@ class TrackerAgent:
                 next_action = self._determine_next_action(app.status, job.company)
                 notes_val = app.notes or (job.score.rationale[:80] + "..." if job.score and job.score.rationale else "")
 
-                row_data = [
-                    job.company,
-                    job.title,
-                    job.location_norm or job.location_raw,
-                    job.industry.replace("_", " ").title(),
-                    job.ats_type.capitalize(),
-                    app.status,
-                    round(score_val, 3) if score_val is not None else "",
-                    applied_str,
-                    conf_id,
-                    next_action,
-                    notes_val,
-                    job.apply_url
-                ]
                 k = (str(job.company).strip().lower(), str(job.title).strip().lower(), str(job.location_norm or job.location_raw).strip().lower())
                 k_fb = (str(job.company).strip().lower(), str(job.title).strip().lower())
 
-                if k in row_lookup:
-                    existing_rows[row_lookup[k]] = row_data
-                elif k_fb in row_lookup:
-                    existing_rows[row_lookup[k_fb]] = row_data
+                target_idx = row_lookup.get(k) if k in row_lookup else row_lookup.get(k_fb)
+
+                if target_idx is not None:
+                    old_row = existing_rows[target_idx]
+                    final_score = round(score_val, 3) if score_val is not None else old_row[6]
+                    final_notes = notes_val or old_row[10]
+                    final_conf = conf_id or old_row[8]
+                    final_date = applied_str or old_row[7]
+                    row_data = [
+                        job.company,
+                        job.title,
+                        job.location_norm or job.location_raw,
+                        job.industry.replace("_", " ").title(),
+                        job.ats_type.capitalize(),
+                        app.status,
+                        final_score,
+                        final_date,
+                        final_conf,
+                        next_action,
+                        final_notes,
+                        job.apply_url
+                    ]
+                    existing_rows[target_idx] = row_data
                 else:
+                    row_data = [
+                        job.company,
+                        job.title,
+                        job.location_norm or job.location_raw,
+                        job.industry.replace("_", " ").title(),
+                        job.ats_type.capitalize(),
+                        app.status,
+                        round(score_val, 3) if score_val is not None else "",
+                        applied_str,
+                        conf_id,
+                        next_action,
+                        notes_val,
+                        job.apply_url
+                    ]
                     existing_rows.append(row_data)
                     row_lookup[k] = len(existing_rows) - 1
 
         # Filter rows: only keep SWE intern roles
         filtered_rows = [r for r in existing_rows if self.is_swe_intern_role(r[1])]
 
-        # Sort rows: Company first, then Role, then Location priority
-        if sort_by == "company":
+        # Sort rows
+        if sort_by == "industry_score":
+            from collections import defaultdict
+            by_industry = defaultdict(list)
+            for r in filtered_rows:
+                k = self.industry_priority_key(r[3])
+                by_industry[k].append(r)
+
+            sorted_rows = []
+            for ind_k in sorted(by_industry.keys()):
+                ind_rows = by_industry[ind_k]
+                by_comp = defaultdict(list)
+                for r in ind_rows:
+                    comp_name = str(r[0] or "").strip()
+                    by_comp[comp_name].append(r)
+
+                comp_avg = {}
+                for comp_name, comp_rows in by_comp.items():
+                    scores = [float(r[6]) for r in comp_rows if r[6] is not None and isinstance(r[6], (int, float))]
+                    avg = sum(scores) / len(scores) if scores else 0.0
+                    comp_avg[comp_name] = avg
+
+                sorted_comps = sorted(by_comp.keys(), key=lambda c: (-comp_avg[c], c.lower()))
+
+                for comp_name in sorted_comps:
+                    c_rows = by_comp[comp_name]
+                    sorted_c_rows = sorted(
+                        c_rows,
+                        key=lambda r: (
+                            -(float(r[6]) if r[6] is not None and isinstance(r[6], (int, float)) else 0.0),
+                            self.location_priority_sort_key(r[2]),
+                            str(r[1] or "").lower()
+                        )
+                    )
+                    sorted_rows.extend(sorted_c_rows)
+        elif sort_by == "company":
             sorted_rows = sorted(
                 filtered_rows,
                 key=lambda r: (
