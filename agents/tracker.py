@@ -1,9 +1,10 @@
 from __future__ import annotations
 import os
+import re
 import json
 import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 import yaml
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -24,6 +25,97 @@ class TrackerAgent:
         self.project_root = project_root
         self.reports_dir = self.project_root / "reports"
         self.reports_dir.mkdir(parents=True, exist_ok=True)
+
+    def is_swe_intern_role(self, title: str) -> bool:
+        """Determine if role title is a Software Engineering / Developer intern role."""
+        if not title:
+            return False
+        t = str(title).lower().strip()
+        
+        intern_markers = ['intern', 'co-op', 'coop', 'campus', 'student', 'fellow', 'summer', 'undergrad', 'grad', 'fellowship', 'analyst program']
+        if not any(m in t for m in intern_markers):
+            return False
+            
+        non_swe_exact = [
+            'product design', 'product designer', 'product manager', 'product management',
+            'project manager', 'program manager', 'program management',
+            'hardware', 'analog', 'digital design', 'asic', 'rf ', 'silicon', 'fpga design',
+            'mechanical', 'civil', 'chemical', 'optical', 'biomedical', 'structural', 'acoustic',
+            'business analyst', 'sales', 'marketing', 'accountant', 'accounting', 'finance analyst',
+            'financial analyst', 'investment analyst', 'investment banking', 'wealth management',
+            'actuarial', 'actuary', 'trader intern', 'trading intern', 'commodity trading',
+            'risk analyst', 'risk management', 'credit risk', 'audit', 'recruiter', 'recruiting',
+            'human resources', 'talent acquisition', 'legal', 'compliance', 'supply chain',
+            'operations intern', 'underwriting', 'graphic design', 'ux designer', 'ui designer',
+            'weapon control', 'customer insight', 'category insight'
+        ]
+        if any(ns in t for ns in non_swe_exact):
+            if not any(sw in t for sw in ['software', 'swe', 'sde', 'developer', 'coding', 'development']):
+                return False
+
+        if any(qr in t for qr in ['quantitative research', 'quant research', 'quant trader', 'quantitative trader']):
+            if not any(qd in t for qd in ['developer', 'development', 'software', 'engineer', 'swe']):
+                return False
+
+        swe_patterns = [
+            r'\bsoftware\b',
+            r'\bswe\b',
+            r'\bsde\b',
+            r'\bdeveloper\b',
+            r'\bdevelopment\b',
+            r'\bfrontend\b',
+            r'\bbackend\b',
+            r'\bfull\s*stack\b',
+            r'\bdistributed\s+systems\b',
+            r'\bplatform\s+engineer\b',
+            r'\binfrastructure\s+engineer\b',
+            r'\bsystems\s+engineer\b',
+            r'\bsystems\s+software\b',
+            r'\bcore\s+engineer\b',
+            r'\bdata\s+(platform|infrastructure|engineer)\b',
+            r'\b(machine\s+learning|ml|ai)\s+(engineer|software|developer)\b',
+            r'\b(cloud|devops|sre|site\s+reliability)\s*(engineer|intern)\b',
+            r'\bquant(itative)?\s*(developer|software|development)\b',
+            r'\b(algo|algorithmic)\s*(trading\s*)?(developer|software)\b',
+            r'\btrading\s+systems\b',
+            r'\b(ios|android|mobile|web)\s+(developer|engineer)\b',
+            r'\bembedded\s+(software|systems)\b',
+            r'\bfirmware\s+(engineer|developer|software)\b',
+            r'\b(technology|tech|engineering)\s+(summer\s+)?analyst\b',
+            r'\bsummer\s+analyst\b.*(engineering|technology|developer|software)'
+        ]
+        
+        for pat in swe_patterns:
+            if re.search(pat, t):
+                if any(bad in t for bad in ['business development', 'learning & development', 'real estate development', 'land development', 'talent development']):
+                    return False
+                return True
+                
+        return False
+
+    def location_priority_sort_key(self, loc: Optional[str]) -> Tuple[int, str]:
+        """Sort locations: New York (0) -> SF Bay Area (1) -> Chicago (2) -> Seattle (3) -> Alphabetical (4) -> Blank (5)."""
+        if not loc:
+            return (5, "zzz")
+        l_str = str(loc).strip()
+        l = l_str.lower()
+        
+        # Priority 0: New York
+        if 'new york' in l or 'nyc' in l or 'manhattan' in l or ('brooklyn' in l and ('ny' in l or 'new york' in l)):
+            return (0, l_str.lower())
+        # Priority 1: SF Bay Area
+        bay_keywords = ['sf bay', 'san francisco', 'sunnyvale', 'mountain view', 'palo alto', 'menlo park', 'san jose', 'santa clara', 'cupertino', 'oakland', 'berkeley', 'redwood city', 'foster city', 'san mateo', 'south san francisco', 'bay area', 'fremont']
+        if any(k in l for k in bay_keywords):
+            return (1, l_str.lower())
+        # Priority 2: Chicago
+        if 'chicago' in l:
+            return (2, l_str.lower())
+        # Priority 3: Seattle
+        seattle_keywords = ['seattle', 'redmond', 'bellevue', 'kirkland']
+        if any(k in l for k in seattle_keywords):
+            return (3, l_str.lower())
+        # Priority 4: All other locations (alphabetical)
+        return (4, l.strip())
 
     def _determine_next_action(self, status: str, company: str) -> str:
         """Map application status to clear next action for human candidate."""
@@ -312,16 +404,13 @@ class TrackerAgent:
 
         return target_file
 
-    def export_excel(self, output_path: Optional[Path] = None) -> Path:
-        """Export single source of truth SQLite database to styled Excel spreadsheet (tracker.xlsx)."""
+    def export_excel(self, output_path: Optional[Path] = None, sort_by: str = "company") -> Path:
+        """Export single source of truth SQLite database to styled Excel spreadsheet (tracker.xlsx).
+        Filters only SWE intern roles, sorts by Company -> Role -> Location priority,
+        preserves master records, and includes Trading Companies tab.
+        """
         target_file = output_path or (self.project_root / "tracker.xlsx")
 
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Application Tracker"
-        ws.views.sheetView[0].showGridLines = True
-
-        # Header definitions
         headers = [
             "Company",
             "Role Title",
@@ -337,8 +426,105 @@ class TrackerAgent:
             "Apply URL"
         ]
 
+        # Load existing rows from target_file if present (preserving master data)
+        existing_rows = []
+        has_trading_tab_src = None
+        if target_file.exists():
+            try:
+                wb_exist = openpyxl.load_workbook(target_file, data_only=True)
+                if "Application Tracker" in wb_exist.sheetnames:
+                    ws_exist = wb_exist["Application Tracker"]
+                    for r in list(ws_exist.iter_rows(values_only=True))[1:]:
+                        if r[0] and r[1]:
+                            existing_rows.append(list(r))
+                if "Trading Companies" in wb_exist.sheetnames:
+                    has_trading_tab_src = wb_exist["Trading Companies"]
+            except Exception:
+                pass
+
+        # Index existing rows for DB application updates
+        row_lookup = {}
+        for idx, r in enumerate(existing_rows):
+            k = (str(r[0]).strip().lower(), str(r[1]).strip().lower(), str(r[2]).strip().lower())
+            row_lookup[k] = idx
+            k_fb = (str(r[0]).strip().lower(), str(r[1]).strip().lower())
+            if k_fb not in row_lookup:
+                row_lookup[k_fb] = idx
+
+        # Fetch Data from SQLite and update / append
+        with self.session_factory() as db:
+            apps = (
+                db.query(Application)
+                .join(Job)
+                .outerjoin(Score, Job.id == Score.job_id)
+                .all()
+            )
+
+            for app in apps:
+                job = app.job
+                score_val = job.score.total if job.score else None
+                applied_str = app.submitted_at.strftime("%Y-%m-%d") if app.submitted_at else ""
+                conf_id = app.confirmation_id or ""
+                next_action = self._determine_next_action(app.status, job.company)
+                notes_val = app.notes or (job.score.rationale[:80] + "..." if job.score and job.score.rationale else "")
+
+                row_data = [
+                    job.company,
+                    job.title,
+                    job.location_norm or job.location_raw,
+                    job.industry.replace("_", " ").title(),
+                    job.ats_type.capitalize(),
+                    app.status,
+                    round(score_val, 3) if score_val is not None else "",
+                    applied_str,
+                    conf_id,
+                    next_action,
+                    notes_val,
+                    job.apply_url
+                ]
+                k = (str(job.company).strip().lower(), str(job.title).strip().lower(), str(job.location_norm or job.location_raw).strip().lower())
+                k_fb = (str(job.company).strip().lower(), str(job.title).strip().lower())
+
+                if k in row_lookup:
+                    existing_rows[row_lookup[k]] = row_data
+                elif k_fb in row_lookup:
+                    existing_rows[row_lookup[k_fb]] = row_data
+                else:
+                    existing_rows.append(row_data)
+                    row_lookup[k] = len(existing_rows) - 1
+
+        # Filter rows: only keep SWE intern roles
+        filtered_rows = [r for r in existing_rows if self.is_swe_intern_role(r[1])]
+
+        # Sort rows: Company first, then Role, then Location priority
+        if sort_by == "company":
+            sorted_rows = sorted(
+                filtered_rows,
+                key=lambda r: (
+                    str(r[0] or "").strip().lower(),
+                    str(r[1] or "").strip().lower(),
+                    self.location_priority_sort_key(r[2])
+                )
+            )
+        else:
+            priority_order = {
+                "offer": 0, "onsite": 1, "phone": 2, "oa": 3,
+                "in_process": 4, "submitted": 5, "ready_for_review": 6,
+                "tailored": 7, "qualified": 8, "discovered": 9,
+                "skipped": 10, "rejected": 11
+            }
+            sorted_rows = sorted(
+                filtered_rows,
+                key=lambda r: (priority_order.get(r[5], 99), -(r[6] if isinstance(r[6], (int, float)) else 0.0))
+            )
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Application Tracker"
+        ws.views.sheetView[0].showGridLines = True
+
         # Colors & Fonts
-        header_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid") # Deep Royal Navy
+        header_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
         header_font = Font(name="Arial", size=11, bold=True, color="FFFFFF")
         regular_font = Font(name="Arial", size=10)
         bold_font = Font(name="Arial", size=10, bold=True)
@@ -347,19 +533,19 @@ class TrackerAgent:
         thin_side = Side(style="thin", color="E2E8F0")
         border_all = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
 
-        # Status conditional color styles
         status_styles = {
-            "offer": PatternFill(start_color="BBF7D0", end_color="BBF7D0", fill_type="solid"),     # Bright Emerald
-            "onsite": PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid"),    # Light Green
-            "phone": PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid"),     # Light Green
-            "oa": PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid"),        # Light Green
-            "submitted": PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid"), # Light Green
-            "in_process": PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid"), # Light Green
-            "ready_for_review": PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid"), # Light Amber
-            "tailored": PatternFill(start_color="DBEAFE", end_color="DBEAFE", fill_type="solid"), # Light Blue
-            "qualified": PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid"), # Light Slate
-            "skipped": PatternFill(start_color="F3F4F6", end_color="F3F4F6", fill_type="solid"), # Light Gray
-            "rejected": PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")  # Light Red
+            "offer": PatternFill(start_color="BBF7D0", end_color="BBF7D0", fill_type="solid"),
+            "onsite": PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid"),
+            "phone": PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid"),
+            "oa": PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid"),
+            "submitted": PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid"),
+            "in_process": PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid"),
+            "ready_for_review": PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid"),
+            "tailored": PatternFill(start_color="DBEAFE", end_color="DBEAFE", fill_type="solid"),
+            "qualified": PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid"),
+            "discovered": PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid"),
+            "skipped": PatternFill(start_color="F3F4F6", end_color="F3F4F6", fill_type="solid"),
+            "rejected": PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
         }
         status_text_colors = {
             "offer": Font(name="Arial", size=10, bold=True, color="15803D"),
@@ -371,6 +557,7 @@ class TrackerAgent:
             "ready_for_review": Font(name="Arial", size=10, bold=True, color="92400E"),
             "tailored": Font(name="Arial", size=10, bold=True, color="1E40AF"),
             "qualified": Font(name="Arial", size=10, bold=True, color="334155"),
+            "discovered": Font(name="Arial", size=10, color="475569"),
             "skipped": Font(name="Arial", size=10, color="6B7280"),
             "rejected": Font(name="Arial", size=10, color="991B1B")
         }
@@ -385,74 +572,34 @@ class TrackerAgent:
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=False)
             cell.border = border_all
 
-        # Fetch Data from SQLite
-        with self.session_factory() as db:
-            apps = (
-                db.query(Application)
-                .join(Job)
-                .outerjoin(Score, Job.id == Score.job_id)
-                .all()
-            )
+        for row_idx, row_data in enumerate(sorted_rows, start=2):
+            ws.append(row_data)
+            ws.row_dimensions[row_idx].height = 20
+            app_status = str(row_data[5] or "").strip()
+            score_val = row_data[6] if isinstance(row_data[6], (int, float)) else None
 
-            # Sort in python for strict priority order:
-            priority_order = {
-                "offer": 0, "onsite": 1, "phone": 2, "oa": 3,
-                "in_process": 4, "submitted": 5, "ready_for_review": 6,
-                "tailored": 7, "qualified": 8, "discovered": 9,
-                "skipped": 10, "rejected": 11
-            }
-            apps_sorted = sorted(
-                apps,
-                key=lambda a: (priority_order.get(a.status, 99), -(a.job.score.total if a.job.score else 0.0))
-            )
+            # Apply cell formatting
+            for col_idx in range(1, len(headers) + 1):
+                cell = ws.cell(row=row_idx, column=col_idx)
+                cell.font = regular_font
+                cell.border = border_all
+                cell.alignment = Alignment(vertical="center")
 
-            for row_idx, app in enumerate(apps_sorted, start=2):
-                job = app.job
-                score_val = job.score.total if job.score else None
-                applied_str = app.submitted_at.strftime("%Y-%m-%d") if app.submitted_at else ""
-                conf_id = app.confirmation_id or ""
-                next_action = self._determine_next_action(app.status, job.company)
-                notes_val = app.notes or (job.score.rationale[:80] + "..." if job.score and job.score.rationale else "")
-
-                row_data = [
-                    job.company,
-                    job.title,
-                    job.location_norm,
-                    job.industry.replace("_", " ").title(),
-                    job.ats_type.capitalize(),
-                    app.status,
-                    round(score_val, 3) if score_val is not None else "",
-                    applied_str,
-                    conf_id,
-                    next_action,
-                    notes_val,
-                    job.apply_url
-                ]
-                ws.append(row_data)
-                ws.row_dimensions[row_idx].height = 20
-
-                # Apply cell formatting
-                for col_idx in range(1, len(headers) + 1):
-                    cell = ws.cell(row=row_idx, column=col_idx)
-                    cell.font = regular_font
-                    cell.border = border_all
-                    cell.alignment = Alignment(vertical="center")
-
-                    # Status styling
-                    if col_idx == 6: # Status
-                        cell.fill = status_styles.get(app.status, PatternFill(fill_type=None))
-                        cell.font = status_text_colors.get(app.status, regular_font)
+                # Status styling
+                if col_idx == 6: # Status
+                    cell.fill = status_styles.get(app_status, PatternFill(fill_type=None))
+                    cell.font = status_text_colors.get(app_status, regular_font)
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                elif col_idx == 7: # Rank Score
+                    cell.alignment = Alignment(horizontal="right", vertical="center")
+                    if score_val is not None:
+                        cell.number_format = "0.000"
+                elif col_idx in (1, 9): # Company or Confirmation ID
+                    cell.font = bold_font if col_idx == 1 else mono_font
+                    if col_idx == 9:
                         cell.alignment = Alignment(horizontal="center", vertical="center")
-                    elif col_idx == 7: # Rank Score
-                        cell.alignment = Alignment(horizontal="right", vertical="center")
-                        if score_val is not None:
-                            cell.number_format = "0.000"
-                    elif col_idx in (1, 9): # Company or Confirmation ID
-                        cell.font = bold_font if col_idx == 1 else mono_font
-                        if col_idx == 9:
-                            cell.alignment = Alignment(horizontal="center", vertical="center")
-                    elif col_idx == 8: # Date Applied
-                        cell.alignment = Alignment(horizontal="center", vertical="center")
+                elif col_idx == 8: # Date Applied
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
 
         # Auto-adjust column widths
         for col in ws.columns:
@@ -481,24 +628,88 @@ class TrackerAgent:
             c.border = border_all
             c.alignment = Alignment(horizontal="center", vertical="center")
 
-        with self.session_factory() as db:
-            total_apps = db.query(Application).count()
-            current_row = 4
-            for st in ["in_process", "submitted", "ready_for_review", "tailored", "qualified", "discovered", "skipped"]:
-                count = db.query(Application).filter(Application.status == st).count()
-                pct = (count / total_apps * 100) if total_apps > 0 else 0
-                ws_summary.append([st, count, f"{pct:.1f}%"])
-                ws_summary.cell(row=current_row, column=1).font = bold_font
-                ws_summary.cell(row=current_row, column=1).fill = status_styles.get(st, PatternFill(fill_type=None))
-                ws_summary.cell(row=current_row, column=2).alignment = Alignment(horizontal="right")
-                ws_summary.cell(row=current_row, column=3).alignment = Alignment(horizontal="right")
-                for c_i in range(1, 4):
-                    ws_summary.cell(row=current_row, column=c_i).border = border_all
-                current_row += 1
+        status_counts = {}
+        for r in sorted_rows:
+            st = str(r[5] or "").strip()
+            status_counts[st] = status_counts.get(st, 0) + 1
+
+        total_apps = len(sorted_rows)
+        current_row = 4
+        for st in ["in_process", "submitted", "ready_for_review", "tailored", "qualified", "discovered", "skipped", "rejected"]:
+            count = status_counts.get(st, 0)
+            pct = (count / total_apps * 100) if total_apps > 0 else 0
+            ws_summary.append([st, count, f"{pct:.1f}%"])
+            ws_summary.cell(row=current_row, column=1).font = bold_font
+            ws_summary.cell(row=current_row, column=1).fill = status_styles.get(st, PatternFill(fill_type=None))
+            ws_summary.cell(row=current_row, column=1).font = status_text_colors.get(st, bold_font)
+            ws_summary.cell(row=current_row, column=2).alignment = Alignment(horizontal="right")
+            ws_summary.cell(row=current_row, column=3).alignment = Alignment(horizontal="right")
+            for c_i in range(1, 4):
+                ws_summary.cell(row=current_row, column=c_i).border = border_all
+            current_row += 1
+
+        # Total row
+        ws_summary.append(["Total Roles", total_apps, "100.0%"])
+        ws_summary.cell(row=current_row, column=1).font = bold_font
+        ws_summary.cell(row=current_row, column=2).font = bold_font
+        ws_summary.cell(row=current_row, column=3).font = bold_font
+        ws_summary.cell(row=current_row, column=2).alignment = Alignment(horizontal="right")
+        ws_summary.cell(row=current_row, column=3).alignment = Alignment(horizontal="right")
+        for c_i in range(1, 4):
+            ws_summary.cell(row=current_row, column=c_i).border = border_all
 
         for col in ws_summary.columns:
             col_letter = get_column_letter(col[0].column)
             ws_summary.column_dimensions[col_letter].width = 24
+
+        # Trading Companies sheet
+        trading_file = self.project_root / "trading_companies.xlsx"
+        trade_ws_src = None
+        if trading_file.exists():
+            try:
+                wb_trade = openpyxl.load_workbook(trading_file)
+                if "Trading Companies" in wb_trade.sheetnames:
+                    trade_ws_src = wb_trade["Trading Companies"]
+            except Exception:
+                pass
+        elif has_trading_tab_src is not None:
+            trade_ws_src = has_trading_tab_src
+
+        if trade_ws_src is not None:
+            ws_trade_dst = wb.create_sheet(title="Trading Companies")
+            ws_trade_dst.views.sheetView[0].showGridLines = True
+            for row in trade_ws_src.iter_rows():
+                for cell in row:
+                    dst_cell = ws_trade_dst.cell(row=cell.row, column=cell.column, value=cell.value)
+                    if cell.has_style:
+                        dst_cell.font = Font(
+                            name=cell.font.name,
+                            size=cell.font.size,
+                            bold=cell.font.bold,
+                            italic=cell.font.italic,
+                            color=cell.font.color
+                        )
+                        dst_cell.fill = PatternFill(
+                            fill_type=cell.fill.fill_type,
+                            start_color=cell.fill.start_color,
+                            end_color=cell.fill.end_color
+                        )
+                        dst_cell.alignment = Alignment(
+                            horizontal=cell.alignment.horizontal,
+                            vertical=cell.alignment.vertical,
+                            wrap_text=cell.alignment.wrap_text
+                        )
+                        dst_cell.border = Border(
+                            left=cell.border.left,
+                            right=cell.border.right,
+                            top=cell.border.top,
+                            bottom=cell.border.bottom
+                        )
+
+            for r_idx, r_dim in trade_ws_src.row_dimensions.items():
+                ws_trade_dst.row_dimensions[r_idx].height = r_dim.height
+            for c_idx, c_dim in trade_ws_src.column_dimensions.items():
+                ws_trade_dst.column_dimensions[c_idx].width = c_dim.width
 
         wb.save(str(target_file))
         return target_file

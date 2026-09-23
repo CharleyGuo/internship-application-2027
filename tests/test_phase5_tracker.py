@@ -259,7 +259,7 @@ def test_excel_styling_and_conditional_formatting():
     found_submitted = False
     found_in_process = False
 
-    for row in range(2, min(ws.max_row + 1, 30)):
+    for row in range(2, ws.max_row + 1):
         val = ws.cell(row=row, column=status_col_idx).value
         cell_fill = ws.cell(row=row, column=status_col_idx).fill
         if val in ["submitted", "in_process"]:
