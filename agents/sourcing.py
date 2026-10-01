@@ -10,7 +10,7 @@ import yaml
 import httpx
 from bs4 import BeautifulSoup
 
-from db.session import SessionLocal, compute_dedup_key, generate_id
+from db.session import SessionLocal, get_user_session_factory, compute_dedup_key, generate_id
 from db.models import Job, Application, Event
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -99,15 +99,39 @@ def check_network() -> bool:
         return False
 
 class SourcingAgent:
-    """Discovers, normalizes, and upserts internship postings."""
+    """Discovers, normalizes, and upserts job and internship postings."""
 
-    def __init__(self):
+    def __init__(self, user: Optional[str] = None):
+        self.user = user
+        self.session_factory = get_user_session_factory(user)
+
+        user_dir = PROJECT_ROOT / "users" / user if user and user != "default" else None
+        user_filters = user_dir / "filters.yaml" if user_dir else None
+        if user_filters and user_filters.exists():
+            self.filters_config = load_yaml(user_filters)
+        else:
+            self.filters_config = load_yaml(PROJECT_ROOT / "config" / "filters.yaml")
+
         self.companies_config = load_yaml(PROJECT_ROOT / "config" / "companies.yaml")
-        self.filters_config = load_yaml(PROJECT_ROOT / "config" / "filters.yaml")
         self.headers = {
-            "User-Agent": "InternshipAssistantBot/1.0 (Summer Internship Application Assistant; https://github.com)"
+            "User-Agent": "JobAssistantBot/1.0 (Software Engineering Job Application Assistant; https://github.com)"
         }
         self.online = check_network()
+        self.target_job_types = self.filters_config.get("target_job_types", ["full_time", "new_grad", "internship"])
+
+    def _is_role_match(self, title: str) -> bool:
+        """Check if role title matches target job types and SWE keywords."""
+        if not title:
+            return False
+        t = title.lower()
+        is_intern = bool(re.search(r"\b(intern|internship|co-op|coop)\b", t))
+        is_swe = bool(re.search(r"\b(software|swe|sde|engineer|engineering|developer|dev|systems|platform|backend|frontend|full\s*stack|infrastructure|infra|distributed|compiler|cloud|devops|sre|quant|security|data)\b", t))
+
+        if self.target_job_types == ["internship"]:
+            return is_intern and is_swe
+        if "internship" not in self.target_job_types:
+            return not is_intern and is_swe
+        return is_swe or is_intern
 
     def parse_github_table(self, html_content: str, source_ref: str = "SimplifyJobs/Summer2027-Internships") -> List[Dict[str, Any]]:
         """Parse HTML table rows from GitHub list."""
@@ -147,6 +171,8 @@ class SourcingAgent:
                     industry = c.get("industry", "other")
                     break
 
+            term = "Summer 2027" if "2027" in title else ("New Grad" if any(k in title.lower() for k in ["new grad", "graduate", "entry level"]) else "Full-Time")
+
             postings.append({
                 "company": company,
                 "title": title,
@@ -157,10 +183,10 @@ class SourcingAgent:
                 "ats_type": ats_type,
                 "url": apply_url,
                 "apply_url": apply_url,
-                "term": "Summer 2027",
+                "term": term,
                 "source": "simplify_github",
                 "source_ref": source_ref,
-                "description_md": f"Summer 2027 Internship at {company}: {title}",
+                "description_md": f"{term} opportunity at {company}: {title}",
                 "requirements": []
             })
 
@@ -170,6 +196,7 @@ class SourcingAgent:
         """Fetch SimplifyJobs markdown/HTML table or fall back to snapshot fixture."""
         if self.online:
             github_urls = [
+                "https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/README.md",
                 "https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships/dev/README.md",
                 "https://raw.githubusercontent.com/SimplifyJobs/Summer2026-Internships/dev/README.md"
             ]
@@ -204,12 +231,12 @@ class SourcingAgent:
                     data = resp.json()
                     for item in data.get("jobs", []):
                         title = item.get("title", "")
-                        # Filter for intern / summer keywords
-                        if not re.search(r"(?i)\b(intern|internship|co-op)\b", title):
+                        if not self._is_role_match(title):
                             continue
                         loc_raw = item.get("location", {}).get("name", "Remote")
                         loc_norm, remote_ok = normalize_location(loc_raw)
                         apply_url = item.get("absolute_url", "")
+                        term = "Summer 2027" if "2027" in title else ("New Grad" if "grad" in title.lower() else "Full-Time")
                         postings.append({
                             "company": company_name,
                             "title": title,
@@ -222,7 +249,7 @@ class SourcingAgent:
                             "apply_url": apply_url,
                             "req_id": str(item.get("id")),
                             "posted_at": item.get("updated_at"),
-                            "term": "Summer 2027" if "2027" in title else "probable",
+                            "term": term,
                             "source": "greenhouse_api",
                             "source_ref": url,
                             "description_md": item.get("content", ""),
@@ -245,11 +272,12 @@ class SourcingAgent:
                     data = resp.json()
                     for item in data:
                         title = item.get("text", "")
-                        if not re.search(r"(?i)\b(intern|internship|co-op)\b", title):
+                        if not self._is_role_match(title):
                             continue
                         loc_raw = item.get("categories", {}).get("location", "Remote")
                         loc_norm, remote_ok = normalize_location(loc_raw)
                         apply_url = item.get("hostedUrl", "")
+                        term = "Summer 2027" if "2027" in title else ("New Grad" if "grad" in title.lower() else "Full-Time")
                         postings.append({
                             "company": company_name,
                             "title": title,
@@ -261,7 +289,7 @@ class SourcingAgent:
                             "url": apply_url,
                             "apply_url": apply_url,
                             "req_id": str(item.get("id")),
-                            "term": "Summer 2027" if "2027" in title else "probable",
+                            "term": term,
                             "source": "lever_api",
                             "source_ref": url,
                             "description_md": item.get("descriptionPlain", ""),
@@ -284,11 +312,12 @@ class SourcingAgent:
                     data = resp.json()
                     for item in data.get("jobs", []):
                         title = item.get("title", "")
-                        if not re.search(r"(?i)\b(intern|internship|co-op)\b", title):
+                        if not self._is_role_match(title):
                             continue
                         loc_raw = item.get("location", "Remote")
                         loc_norm, remote_ok = normalize_location(loc_raw)
                         apply_url = item.get("jobUrl", "")
+                        term = "Summer 2027" if "2027" in title else ("New Grad" if "grad" in title.lower() else "Full-Time")
                         postings.append({
                             "company": company_name,
                             "title": title,
@@ -300,7 +329,7 @@ class SourcingAgent:
                             "url": apply_url,
                             "apply_url": apply_url,
                             "req_id": str(item.get("id")),
-                            "term": "Summer 2027" if "2027" in title else "probable",
+                            "term": term,
                             "source": "ashby_api",
                             "source_ref": url,
                             "description_md": item.get("descriptionHtml", ""),
@@ -309,6 +338,7 @@ class SourcingAgent:
         except Exception:
             pass
         return postings
+
     def import_manual_posting(
         self,
         url: str,
@@ -319,7 +349,7 @@ class SourcingAgent:
         """Manually import a posting URL (from LinkedIn, Handshake, etc.)."""
         ats_type = detect_ats_type(url)
         comp_name = company or "Target Company"
-        role_title = title or "Software Engineer Intern - Summer 2027"
+        role_title = title or "Software Engineer"
         loc_raw = location or "New York, NY"
         loc_norm, remote_ok = normalize_location(loc_raw)
 
@@ -327,7 +357,7 @@ class SourcingAgent:
         job_id = generate_id("job", dedup_key)
         now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 
-        with SessionLocal() as db:
+        with self.session_factory() as db:
             existing = db.query(Job).filter_by(dedup_key=dedup_key).first()
             if existing:
                 existing.last_seen = now
@@ -417,7 +447,7 @@ class SourcingAgent:
         now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
         seen_in_batch = set()
 
-        with SessionLocal() as db:
+        with self.session_factory() as db:
             for p in all_postings:
                 comp = p["company"]
                 title = p["title"]

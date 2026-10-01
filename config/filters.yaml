@@ -1,4 +1,11 @@
-# Filter & Ranking Rules Configuration
+# General Job Application & Ranking Rules Configuration
+# Supports Full-Time, New Grad, and Internship Software Engineering roles
+
+job_search_mode: "general"
+target_job_types:
+  - "full_time"
+  - "new_grad"
+  - "internship"
 
 limits:
   daily_submission_cap: 100
@@ -7,16 +14,27 @@ limits:
 
 hard_filters:
   role:
-    # Must match engineering / developer / systems / ML infra keywords
+    # Must match engineering / developer / systems / quantitative dev keywords
     include_patterns:
-      - '(?i)\b(intern|internship|co-op|coop|summer\s+analyst)\b'
-      - '(?i)\b(software|swe|engineer|engineering|developer|dev|systems|quant(?:itative)?\s+dev(?:eloper)?|research\s+engineer|infrastructure|infra|platform|backend|distributed)\b'
-    # Exclude non-engineering roles
+      - '(?i)\b(software|swe|sde|engineer|engineering|developer|development|dev|systems|platform|backend|frontend|full\s*stack|infrastructure|infra|distributed|compiler|cloud|devops|sre|site\s+reliability|quant(?:itative)?\s+(?:dev|software|developer)|algo(?:rithmic)?\s+(?:trading\s+)?developer|trading\s+systems)\b'
+      - '(?i)\b(intern|internship|co-op|coop|campus|fellow|summer|new\s+grad|entry\s+level|associate|junior|university\s+grad|graduate|swe\s*1|software\s+engineer\s+i)\b'
+    # Exclude non-engineering roles & high-seniority roles (Director/VP/Principal)
     exclude_patterns:
       - '(?i)\b(product\s+manager|technical\s+product\s+manager|program\s+manager)\b'
       - '(?i)\b(data\s+analyst|business\s+analyst|financial\s+analyst)\b'
-      - '(?i)\b(it\s+support|helpdesk|desktop\s+support|technician)\b'
+      - '(?i)\b(it\s+support|helpdesk|desktop\s+support|technician|service\s+desk)\b'
       - '(?i)\b(hardware-only|asic|pcb|fpga-only|mechanical)\b'
+      - '(?i)\b(director|vice\s+president|vp\b|principal\s+engineer|distinguished\s+engineer|head\s+of\s+engineering)\b'
+    # Exclude specialized non-target tracks (per user preferences)
+    specialized_exclusions:
+      data_engineer: true
+      ml_engineer: true
+      ai_engineer: true
+      analyst: true
+      system_engineer_standalone: true
+      research_intern: true
+      phd_ms_only: true
+      test_developer: true
     # Roles tagged as adjacent (retained in DB with adjacent tag, not hard rejected)
     adjacent_patterns:
       - '(?i)\b(quant(?:itative)?\s+research(?:er)?|qr|trader|trading\s+intern)\b'
@@ -28,9 +46,12 @@ hard_filters:
 
   term:
     target_terms:
+      - "Full-Time"
+      - "New Grad"
       - "Summer 2027"
       - "Summer '27"
       - "2027"
+      - "Immediate"
       - "class of 2028"
     probable_date_threshold: "2026-08-01"
 

@@ -10,7 +10,7 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-from db.session import SessionLocal
+from db.session import SessionLocal, get_user_session_factory
 from db.models import Job, Application, Score, Artifact, Event
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -20,11 +20,24 @@ class TrackerAgent:
     and produces styled Excel tracker exports.
     """
 
-    def __init__(self, db_session_factory=SessionLocal, project_root: Path = PROJECT_ROOT):
-        self.session_factory = db_session_factory
+    def __init__(self, db_session_factory=None, project_root: Path = PROJECT_ROOT, user: Optional[str] = None):
+        self.user = user
         self.project_root = project_root
-        self.reports_dir = self.project_root / "reports"
+        user_dir = self.project_root / "users" / user if user and user != "default" else None
+        user_filters = (user_dir / "filters.yaml") if user_dir and (user_dir / "filters.yaml").exists() else (self.project_root / "config" / "filters.yaml")
+        if user_filters.exists():
+            with open(user_filters, "r", encoding="utf-8") as f:
+                self.filters_cfg = yaml.safe_load(f) or {}
+        else:
+            self.filters_cfg = {}
+
+        self.mode = self.filters_cfg.get("job_search_mode", "general")
+        self.target_job_types = self.filters_cfg.get("target_job_types", ["full_time", "new_grad", "internship"])
+
+        self.session_factory = db_session_factory or get_user_session_factory(user)
+        self.reports_dir = (user_dir / "reports") if user_dir else (self.project_root / "reports")
         self.reports_dir.mkdir(parents=True, exist_ok=True)
+        self.tracker_excel_path = (user_dir / "tracker.xlsx") if user_dir else (self.project_root / "tracker.xlsx")
 
     def should_exclude_role(self, title: str) -> bool:
         """Filter out non-target roles per user criteria:
@@ -118,18 +131,20 @@ class TrackerAgent:
 
         return False
 
-    def is_swe_intern_role(self, title: str) -> bool:
-        """Determine if role title is a Software Engineering / Developer intern role."""
+    def is_swe_role(self, title: str) -> bool:
+        """Determine if role title is a target Software Engineering / Developer role."""
         if not title:
             return False
         if self.should_exclude_role(title):
             return False
         t = str(title).lower().strip()
-        
-        intern_markers = ['intern', 'co-op', 'coop', 'campus', 'student', 'fellow', 'summer', 'undergrad', 'grad', 'fellowship', 'analyst program']
-        if not any(m in t for m in intern_markers):
-            return False
-            
+
+        # If configured for internship only, enforce intern markers
+        if getattr(self, "target_job_types", None) == ["internship"]:
+            intern_markers = ['intern', 'co-op', 'coop', 'campus', 'student', 'fellow', 'summer', 'undergrad', 'grad', 'fellowship', 'analyst program']
+            if not any(m in t for m in intern_markers):
+                return False
+
         non_swe_exact = [
             'product design', 'product designer', 'product manager', 'product management',
             'project manager', 'program manager', 'program management',
@@ -178,14 +193,18 @@ class TrackerAgent:
             r'\b(technology|tech|engineering)\s+(summer\s+)?analyst\b',
             r'\bsummer\s+analyst\b.*(engineering|technology|developer|software)'
         ]
-        
+
         for pat in swe_patterns:
             if re.search(pat, t):
                 if any(bad in t for bad in ['business development', 'learning & development', 'real estate development', 'land development', 'talent development']):
                     return False
                 return True
-                
+
         return False
+
+    def is_swe_intern_role(self, title: str) -> bool:
+        """Backward-compatible alias for is_swe_role."""
+        return self.is_swe_role(title)
 
     def location_priority_sort_key(self, loc: Optional[str]) -> Tuple[int, str]:
         """Sort locations: New York (0) -> SF Bay Area (1) -> Chicago (2) -> Seattle (3) -> Alphabetical (4) -> Blank (5)."""
@@ -364,8 +383,10 @@ class TrackerAgent:
 
             # 6. Attention flags
             flagged_items = []
+            user_dir = self.project_root / "users" / self.user if self.user and self.user != "default" else None
+            artifacts_dir = (user_dir / "artifacts") if user_dir else (self.project_root / "artifacts")
             for item in ready_review_data:
-                flags_file = self.project_root / "artifacts" / item["job_id"] / "flags.md"
+                flags_file = artifacts_dir / item["job_id"] / "flags.md"
                 if flags_file.exists():
                     txt = flags_file.read_text(encoding="utf-8").strip()
                     if txt and "No special attention flags" not in txt and "clean match" not in txt.lower():
@@ -375,7 +396,7 @@ class TrackerAgent:
         date_str = report_date.isoformat()
 
         # Load profile dynamically for candidate headline
-        prof_p = self.project_root / "profile" / "profile.yaml"
+        prof_p = (user_dir / "profile.yaml") if user_dir and (user_dir / "profile.yaml").exists() else (self.project_root / "profile" / "profile.yaml")
         if not prof_p.exists():
             prof_p = self.project_root / "profile" / "profile.example.yaml"
         profile_data = {}
@@ -392,11 +413,14 @@ class TrackerAgent:
         grad = profile_data.get("education", {}).get("graduation_expected", "May 2028")
         gpa = profile_data.get("education", {}).get("gpa", "3.90")
 
+        digest_title_prefix = "Daily Internship Application Digest" if self.mode == "internship" else "Daily Job Application Digest"
+        target_term_desc = "Summer 2027 Software Engineering Intern" if self.mode == "internship" else "Software Engineering Roles"
+
         md_lines = [
-            f"# 📊 Daily Internship Application Digest: {date_str}",
+            f"# 📊 {digest_title_prefix}: {date_str}",
             f"**Generated at:** 04:00 AM PT / 07:00 AM ET  ",
             f"**Candidate:** {cand_name} ({inst}, {major}, GPA {gpa}, Expected {grad})  ",
-            f"**Target Term:** Summer 2027 Software Engineering Intern  ",
+            f"**Target Term:** {target_term_desc}  ",
             "",
             "---",
             "",
@@ -496,11 +520,11 @@ class TrackerAgent:
             "---",
             "",
             "## ⚡ Human Review Commands",
-            "- **`ia review`** — Launch interactive CLI review queue for all `ready_for_review` opportunities.",
-            "- **`ia approve <job_id>`** — Authorize mechanical submit token and submit pre-filled application.",
-            "- **`ia edit <job_id> <field> <new_value>`** — Edit pre-filled field before granting approval.",
-            "- **`ia reject <job_id> --reason \"...\"`** — Skip opportunity and archive record.",
-            "- **`ia export`** — Refresh `tracker.xlsx` spreadsheet snapshot."
+            "- **`ja review`** (or `ia review`) — Launch interactive CLI review queue for all `ready_for_review` opportunities.",
+            "- **`ja approve <job_id>`** (or `ia approve`) — Authorize mechanical submit token and submit pre-filled application.",
+            "- **`ja edit <job_id> <field> <new_value>`** (or `ia edit`) — Edit pre-filled field before granting approval.",
+            "- **`ja reject <job_id> --reason \"...\"`** (or `ia reject`) — Skip opportunity and archive record.",
+            "- **`ja export`** (or `ia export`) — Refresh `tracker.xlsx` spreadsheet snapshot."
         ])
 
         target_file = output_path or (self.reports_dir / f"{date_str}.md")
@@ -512,10 +536,10 @@ class TrackerAgent:
 
     def export_excel(self, output_path: Optional[Path] = None, sort_by: str = "industry_score") -> Path:
         """Export single source of truth SQLite database to styled Excel spreadsheet (tracker.xlsx).
-        Filters only SWE intern roles, sorts by Industry -> Company Avg Score -> Opening Score (default),
+        Filters only SWE roles, sorts by Industry -> Company Avg Score -> Opening Score (default),
         preserves master records, and includes Trading Companies tab.
         """
-        target_file = output_path or (self.project_root / "tracker.xlsx")
+        target_file = output_path or self.tracker_excel_path
 
         headers = [
             "Company",
@@ -618,8 +642,8 @@ class TrackerAgent:
                     existing_rows.append(row_data)
                     row_lookup[k] = len(existing_rows) - 1
 
-        # Filter rows: only keep SWE intern roles
-        filtered_rows = [r for r in existing_rows if self.is_swe_intern_role(r[1])]
+        # Filter rows: only keep SWE roles
+        filtered_rows = [r for r in existing_rows if self.is_swe_role(r[1])]
 
         # Sort rows
         if sort_by == "industry_score":
@@ -802,7 +826,7 @@ class TrackerAgent:
         # Summary Tab
         ws_summary = wb.create_sheet(title="Pipeline Overview")
         ws_summary.views.sheetView[0].showGridLines = True
-        ws_summary.append(["Application Pipeline Overview - Summer 2027 SWE Intern"])
+        ws_summary.append(["Application Pipeline Overview - Software Engineering Applications"])
         ws_summary.cell(row=1, column=1).font = Font(name="Arial", size=14, bold=True, color="1E3A8A")
         ws_summary.row_dimensions[1].height = 30
 

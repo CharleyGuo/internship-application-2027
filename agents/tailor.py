@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple, Set
 import yaml
 
-from db.session import SessionLocal, generate_id
+from db.session import SessionLocal, get_user_session_factory, generate_id
 from db.models import Job, Application, Artifact, Event
 from tools.cost_tracker import CostTracker, DailyBudgetCapExceeded
 
@@ -94,18 +94,24 @@ class FactsBank:
 class TailoringAgent:
     """Generates tailored materials bundle: resume variant, cover letter, answers.json, and flags.md."""
 
-    def __init__(self):
-        facts_p = PROJECT_ROOT / "profile" / "facts.yaml"
+    def __init__(self, user: Optional[str] = None):
+        self.user = user
+        self.session_factory = get_user_session_factory(user)
+
+        user_dir = PROJECT_ROOT / "users" / user if user and user != "default" else None
+
+        facts_p = (user_dir / "facts.yaml") if user_dir and (user_dir / "facts.yaml").exists() else (PROJECT_ROOT / "profile" / "facts.yaml")
         if not facts_p.exists():
             facts_p = PROJECT_ROOT / "profile" / "facts.example.yaml"
         self.facts = FactsBank(facts_p)
 
-        prof_p = PROJECT_ROOT / "profile" / "profile.yaml"
+        prof_p = (user_dir / "profile.yaml") if user_dir and (user_dir / "profile.yaml").exists() else (PROJECT_ROOT / "profile" / "profile.yaml")
         if not prof_p.exists():
             prof_p = PROJECT_ROOT / "profile" / "profile.example.yaml"
         self.profile = load_yaml(prof_p)
 
-        self.artifacts_base = PROJECT_ROOT / "artifacts"
+        self.user_dir = user_dir
+        self.artifacts_base = (user_dir / "artifacts") if user_dir else (PROJECT_ROOT / "artifacts")
         self.artifacts_base.mkdir(parents=True, exist_ok=True)
         self.cost_tracker = CostTracker()
 
@@ -216,9 +222,21 @@ class TailoringAgent:
         contact_line = " | ".join(filter(None, [cand_email, cand_phone]))
         links_line = " | ".join(filter(None, [cand_github, cand_website]))
 
+        is_intern_job = bool(re.search(r"\b(intern|internship|co-op|summer\s+analyst)\b", role, re.I))
+        degree = self.profile.get("education", {}).get("degree", "B.S. in Computer Science")
+        major = self.profile.get("education", {}).get("major", "Computer Science")
+        current_title = self.profile.get("professional", {}).get("current_title", "")
+
+        if is_intern_job:
+            intro_p = f"I am writing to express my strong enthusiasm for the {role} position for Summer 2027. I am currently pursuing a {degree} at {school} ({gpa} GPA, expected graduation {grad})."
+        elif current_title:
+            intro_p = f"I am writing to express my strong enthusiasm for the {role} position at {company}. As a {current_title} with an engineering background from {school}, I am excited about contributing to your team."
+        else:
+            intro_p = f"I am writing to express my strong enthusiasm for the {role} position at {company}. With a solid technical foundation in {major} from {school}, I am eager to contribute to your engineering organization."
+
         letter = f"""Dear {company} Recruiting Team,
 
-I am writing to express my strong enthusiasm for the {role} position for Summer 2027. I am currently pursuing a B.S. in Computer Science at {school} ({gpa} GPA, expected graduation {grad}).
+{intro_p}
 
 {proj_highlight}
 
@@ -417,7 +435,7 @@ Sincerely,
         # Enforce budget cap
         self.cost_tracker.check_budget_or_raise(additional_cost=0.005)
 
-        with SessionLocal() as db:
+        with self.session_factory() as db:
             job = db.query(Job).filter_by(id=job_id).first()
             if not job:
                 raise ValueError(f"Job with ID '{job_id}' not found.")

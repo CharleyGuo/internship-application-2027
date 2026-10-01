@@ -48,7 +48,13 @@ profile/variants/*.md
 *.sqlite
 *.sqlite3
 internships.db
+data/*
+!data/.gitkeep
 reports/backups/
+
+# Multi-user profiles and data
+users/*
+!users/.gitkeep
 
 # Excel spreadsheets & exported pipelines
 tracker.xlsx

@@ -7,7 +7,7 @@ from typing import Dict, Any, List, Tuple, Set, Optional
 import yaml
 from sqlalchemy.orm import Session
 
-from db.session import SessionLocal
+from db.session import SessionLocal, get_user_session_factory
 from db.models import Job, Score, Application, Event
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -19,19 +19,40 @@ def load_yaml(path: Path) -> dict:
         return yaml.safe_load(f) or {}
 
 class FilterAndRankAgent:
-    """Evaluates job postings against candidate hard filters and computes multi-factor ranking scores."""
+    """Evaluates job postings against candidate hard filters and computes multi-factor ranking scores.
+    Supports general Software Engineering roles (Full-Time, New Grad, and Internships).
+    """
 
-    def __init__(self):
-        self.filters_cfg = load_yaml(PROJECT_ROOT / "config" / "filters.yaml")
-        facts_p = PROJECT_ROOT / "profile" / "facts.yaml"
-        if not facts_p.exists():
-            facts_p = PROJECT_ROOT / "profile" / "facts.example.yaml"
-        self.facts_cfg = load_yaml(facts_p)
+    def __init__(self, user: Optional[str] = None):
+        self.user = user
+        self.session_factory = get_user_session_factory(user)
 
-        prof_p = PROJECT_ROOT / "profile" / "profile.yaml"
-        if not prof_p.exists():
-            prof_p = PROJECT_ROOT / "profile" / "profile.example.yaml"
-        self.profile_cfg = load_yaml(prof_p)
+        # User-specific config resolution
+        user_dir = PROJECT_ROOT / "users" / user if user and user != "default" else None
+        
+        user_filters = user_dir / "filters.yaml" if user_dir else None
+        if user_filters and user_filters.exists():
+            self.filters_cfg = load_yaml(user_filters)
+        else:
+            self.filters_cfg = load_yaml(PROJECT_ROOT / "config" / "filters.yaml")
+
+        user_facts = user_dir / "facts.yaml" if user_dir else None
+        if user_facts and user_facts.exists():
+            self.facts_cfg = load_yaml(user_facts)
+        else:
+            facts_p = PROJECT_ROOT / "profile" / "facts.yaml"
+            if not facts_p.exists():
+                facts_p = PROJECT_ROOT / "profile" / "facts.example.yaml"
+            self.facts_cfg = load_yaml(facts_p)
+
+        user_prof = user_dir / "profile.yaml" if user_dir else None
+        if user_prof and user_prof.exists():
+            self.profile_cfg = load_yaml(user_prof)
+        else:
+            prof_p = PROJECT_ROOT / "profile" / "profile.yaml"
+            if not prof_p.exists():
+                prof_p = PROJECT_ROOT / "profile" / "profile.example.yaml"
+            self.profile_cfg = load_yaml(prof_p)
 
         self.companies_cfg = load_yaml(PROJECT_ROOT / "config" / "companies.yaml")
 
@@ -39,6 +60,10 @@ class FilterAndRankAgent:
         grad_str = str(self.profile_cfg.get("education", {}).get("graduation_expected", "2028"))
         grad_match = re.search(r"202\d", grad_str)
         self.candidate_grad_year = int(grad_match.group(0)) if grad_match else 2028
+
+        self.job_search_mode = self.filters_cfg.get("job_search_mode", "general")
+        self.target_job_types = self.filters_cfg.get("target_job_types", ["full_time", "new_grad", "internship"])
+        self.hard_filters = self.filters_cfg.get("hard_filters", {})
 
     def _extract_candidate_skills(self) -> Set[str]:
         """Extract atomic skillset tokens from facts.yaml."""
@@ -93,7 +118,7 @@ class FilterAndRankAgent:
             if match:
                 return False, f"Requires security clearance: '{match.group(0)}'", False
 
-        # 2. Excluded Roles Check (PM, Data Analyst only, IT support, Hardware only)
+        # 2. Excluded Non-Engineering Roles Check (PM, Data Analyst only, IT support, Hardware only)
         excluded_role_patterns = [
             (r"\b(product\s+manager|technical\s+product\s+manager|program\s+manager)\b", "Product / Program Management role"),
             (r"\b(data\s+analyst|business\s+analyst|financial\s+analyst)\b", "Data / Financial Analyst role (not engineering)"),
@@ -104,19 +129,71 @@ class FilterAndRankAgent:
             if re.search(pat, title, re.IGNORECASE) and not re.search(r"\b(software|swe|developer)\b", title, re.IGNORECASE):
                 return False, f"Excluded role category: {reason}", False
 
-        # 3. Graduation Year / Term Mismatch Check
-        grad_mismatch_patterns = [
-            (r"\b(must\s+graduate\s+(?:by|in)\s+(?:december\s+)?202[56])\b", f"Requires graduation in 2025/2026 (Candidate graduates {self.candidate_grad_year})"),
-            (r"\b(class\s+of\s+202[567]\s+only|graduating\s+seniors?\s+only)\b", "Restricted to graduating seniors / earlier class years"),
-            (r"\b(must\s+be\s+graduating\s+in\s+fall\s+202[567])\b", f"Requires fall graduation before {self.candidate_grad_year}")
-        ]
-        for pat, reason in grad_mismatch_patterns:
-            match = re.search(pat, full_text, re.IGNORECASE)
-            if match:
-                return False, f"Graduation requirement mismatch: '{match.group(0)}' ({reason})", False
+        # Exclude high seniority roles regardless of SWE keywords
+        if re.search(r"\b(director|vice\s+president|vp\b|principal\s+engineer|distinguished\s+engineer|head\s+of\s+engineering)\b", title, re.IGNORECASE):
+            return False, "Excluded high seniority role (Director/VP/Principal)", False
 
-        # 4. Adjacent Roles (Quant Research, Trader, AI Research)
-        # Marked as adjacent and retained, not hard-excluded
+        # Check specialized exclusions (Data Engineer, ML/AI Engineer, Test Developer/QA, Analyst, PhD/MS only)
+        spec_ex = self.hard_filters.get("role", {}).get("specialized_exclusions", {})
+        if spec_ex.get("data_engineer", True) and (
+            re.search(r'\bdata\s+engineer(ing)?\b', title, re.IGNORECASE) or 
+            re.search(r'\bdata\s+platform\s+engineer\b', title, re.IGNORECASE) or
+            re.search(r'\bdata\s+(infrastructure|platform)\s+engineer\b', title, re.IGNORECASE) or
+            re.search(r'\bdata\s+science\b', title, re.IGNORECASE) or
+            re.search(r'\bdata\s+scientist\b', title, re.IGNORECASE)
+        ):
+            return False, "Excluded specialized track: Data Engineer", False
+
+        if spec_ex.get("ml_engineer", True) and (
+            re.search(r'\b(machine\s+learning|ml)\s+engineer(ing)?\b', title, re.IGNORECASE) or
+            re.search(r'\b(machine\s+learning|ml)\s+infrastructure\s+engineer\b', title, re.IGNORECASE)
+        ):
+            return False, "Excluded specialized track: Machine Learning Engineer", False
+
+        if spec_ex.get("ai_engineer", True) and (
+            re.search(r'\b(ai|artificial\s+intelligence)\s+(software\s+|solution\s+|feature\s+)?(engineer(ing)?|developer)\b', title, re.IGNORECASE) or
+            re.search(r'\bai\s+engineer\b', title, re.IGNORECASE)
+        ):
+            return False, "Excluded specialized track: AI Engineer", False
+
+        if spec_ex.get("test_developer", True) and (
+            re.search(r'\b(test\s+developer|sdet|qa)\b', title, re.IGNORECASE) or 
+            re.search(r'\bsoftware\s+(engineer\s+in\s+)?test\b', title, re.IGNORECASE) or
+            re.search(r'\bquality\s+(engineer|assurance)\b', title, re.IGNORECASE)
+        ):
+            return False, "Excluded specialized track: Test Developer / SDET / QA", False
+
+        if spec_ex.get("phd_ms_only", True) and (
+            re.search(r'\b(phd|ph\.d)\b', title, re.IGNORECASE) or 
+            re.search(r'\bms\s*(only|\/phd)\b', title, re.IGNORECASE) or
+            re.search(r'\(phd\)', title, re.IGNORECASE) or 
+            re.search(r'\(ms\)', title, re.IGNORECASE)
+        ):
+            if not re.search(r'\b(bs|undergrad|bachelor)\b', title, re.IGNORECASE):
+                return False, "Excluded requirement: PhD or MS only", False
+
+        # 3. Detect Job Type: Internship vs. Full-Time / New Grad
+        is_intern = bool(re.search(r"\b(intern|internship|co-op|coop|summer\s+analyst)\b", title, re.IGNORECASE))
+        
+        # Check target job types configuration
+        if self.target_job_types == ["internship"] and not is_intern:
+            return False, f"Configured for internships only; role is not an internship: '{title}'", False
+        if "internship" not in self.target_job_types and is_intern:
+            return False, f"Configured for full-time only; skipping internship role: '{title}'", False
+
+        # 4. Graduation Year / Term Mismatch Check (Only applicable to internships)
+        if is_intern:
+            grad_mismatch_patterns = [
+                (r"\b(must\s+graduate\s+(?:by|in)\s+(?:december\s+)?202[56])\b", f"Requires graduation in 2025/2026 (Candidate graduates {self.candidate_grad_year})"),
+                (r"\b(class\s+of\s+202[567]\s+only|graduating\s+seniors?\s+only)\b", "Restricted to graduating seniors / earlier class years"),
+                (r"\b(must\s+be\s+graduating\s+in\s+fall\s+202[567])\b", f"Requires fall graduation before {self.candidate_grad_year}")
+            ]
+            for pat, reason in grad_mismatch_patterns:
+                match = re.search(pat, full_text, re.IGNORECASE)
+                if match:
+                    return False, f"Graduation requirement mismatch: '{match.group(0)}' ({reason})", False
+
+        # 5. Adjacent Roles (Quant Research, Trader, AI Research)
         adjacent_patterns = [
             r"\b(quant(?:itative)?\s+research(?:er)?|qr\s+intern|trader\s+intern|trading\s+intern)\b",
             r"\b(machine\s+learning\s+research(?:er)?|ai\s+researcher)\b"
@@ -127,16 +204,12 @@ class FilterAndRankAgent:
                 is_adjacent = True
                 break
 
-        # 5. Must match SWE / engineering / developer intern keywords
-        intern_keyword = bool(re.search(r"\b(intern|internship|co-op|coop|summer\s+analyst)\b", title, re.IGNORECASE))
+        # 6. Must match SWE / engineering / developer keywords
         eng_keyword = bool(re.search(
-            r"\b(software|swe|engineer(?:ing)?|developer|development|dev|systems|quant(?:itative)?|infrastructure|infra|platform|backend|fullstack|distributed|compiler|security|data)\b",
+            r"\b(software|swe|sde|engineer(?:ing)?|developer|development|dev|systems|platform|backend|frontend|full\s*stack|infrastructure|infra|distributed|compiler|cloud|devops|sre|site\s+reliability|quant(?:itative)?|algo(?:rithmic)?|security|data)\b",
             title,
             re.IGNORECASE
         ))
-
-        if not intern_keyword:
-            return False, f"Title does not indicate internship / co-op position: '{title}'", is_adjacent
 
         if not (eng_keyword or is_adjacent):
             return False, f"Title does not indicate engineering or dev track: '{title}'", is_adjacent
@@ -181,7 +254,6 @@ class FilterAndRankAgent:
         eligible, eligibility_note, is_adjacent = self.evaluate_hard_filters(job)
 
         # 1. Industry Fit (0.35 weight)
-        # Quant: 1.0, Big Tech/AI: 0.95, Fintech/Banks: 0.90, Other: 0.0
         ind = (job.industry or "other").lower()
         if ind == "quant_trading":
             industry_fit = 1.0
@@ -190,10 +262,9 @@ class FilterAndRankAgent:
         elif ind == "fintech_banks":
             industry_fit = 0.90
         else:
-            industry_fit = 0.0
+            industry_fit = 0.70  # Higher floor for general tech companies
 
         # 2. Location Fit (0.25 weight)
-        # NYC 1st choice: 1.0, SF Bay Area 2nd choice: 0.85, Chicago/Seattle/Remote: 0.70, Others: 0.0
         loc = (job.location_norm or "Other").lower()
         if "new york" in loc or "nyc" in loc:
             location_fit = 1.0
@@ -202,7 +273,7 @@ class FilterAndRankAgent:
         elif any(k in loc for k in ["chicago", "seattle", "remote"]):
             location_fit = 0.70
         else:
-            location_fit = 0.0
+            location_fit = 0.50
 
         # 3. Skills Overlap (0.20 weight)
         text_to_eval = f"{job.title}\n{job.description_md or ''}\n{job.location_raw or ''}"
@@ -282,7 +353,7 @@ class FilterAndRankAgent:
     def rank_all_jobs(self, force: bool = False) -> List[Score]:
         """Rank all unranked or updated jobs in database."""
         scored_records = []
-        with SessionLocal() as db:
+        with self.session_factory() as db:
             jobs = db.query(Job).filter(Job.is_open == True).all()
             for job in jobs:
                 if not force and job.score:
@@ -326,7 +397,7 @@ class FilterAndRankAgent:
 
     def rank_job(self, job_id: str) -> Dict[str, Any]:
         """Rank a single job by id and update score and application status."""
-        with SessionLocal() as db:
+        with self.session_factory() as db:
             job = db.query(Job).filter_by(id=job_id).first()
             if not job:
                 raise ValueError(f"Job '{job_id}' not found.")
@@ -359,4 +430,3 @@ class FilterAndRankAgent:
                 "total": score.total,
                 "rationale": score.rationale
             }
-

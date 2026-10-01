@@ -9,7 +9,7 @@ from typing import Dict, Any, Optional, Tuple, List
 import yaml
 from playwright.async_api import async_playwright, Browser, Page
 
-from db.session import SessionLocal, generate_id
+from db.session import get_user_session_factory, generate_id
 from db.models import Job, Application, Artifact, Event
 from adapters.greenhouse import GreenhouseAdapter
 from adapters.lever import LeverAdapter
@@ -38,12 +38,23 @@ class AlreadySubmittedError(Exception):
 class ApplicationAgent:
     """Manages semi-automated pre-filling, review packet generation, and approval-locked submission."""
 
-    def __init__(self):
-        prof_p = PROJECT_ROOT / "profile" / "profile.yaml"
+    def __init__(self, user: Optional[str] = None):
+        self.user = user
+        self.session_factory = get_user_session_factory(user)
+
+        user_dir = PROJECT_ROOT / "users" / user if user and user != "default" else None
+        prof_p = (user_dir / "profile.yaml") if user_dir and (user_dir / "profile.yaml").exists() else (PROJECT_ROOT / "profile" / "profile.yaml")
         if not prof_p.exists():
             prof_p = PROJECT_ROOT / "profile" / "profile.example.yaml"
         self.profile = load_yaml(prof_p)
-        self.filters_cfg = load_yaml(PROJECT_ROOT / "config" / "filters.yaml")
+
+        user_filters = (user_dir / "filters.yaml") if user_dir and (user_dir / "filters.yaml").exists() else (PROJECT_ROOT / "config" / "filters.yaml")
+        self.filters_cfg = load_yaml(user_filters)
+
+        self.user_dir = user_dir
+        self.artifacts_base = (user_dir / "artifacts") if user_dir else (PROJECT_ROOT / "artifacts")
+        self.artifacts_base.mkdir(parents=True, exist_ok=True)
+
         self.daily_cap = self.filters_cfg.get("limits", {}).get("daily_submission_cap", 100)
         self.adapters: List[BaseATSAdapter] = [
             GreenhouseAdapter(),
@@ -127,9 +138,9 @@ Attached: `{screenshot_path.name}` (`{screenshot_path}`)
 
 ## ⚡ Human Review Commands
 To execute an action, enter one of the following commands:
-- **`ia approve {job.id}`** — Grants approval and executes form submission.
-- **`ia edit {job.id} <field> <new_value>`** — Updates a field value before approval.
-- **`ia reject {job.id} --reason "<reason>"`** — Skips this job posting.
+- **`ja approve {job.id}`** (or `ia approve`) — Grants approval and executes form submission.
+- **`ja edit {job.id} <field> <new_value>`** (or `ia edit`) — Updates a field value before approval.
+- **`ja reject {job.id} --reason "<reason>"`** (or `ia reject`) — Skips this job posting.
 """
         return packet
 
@@ -137,7 +148,7 @@ To execute an action, enter one of the following commands:
         """Pre-fill application form, take screenshot, generate review packet, and halt before submit."""
         now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 
-        with SessionLocal() as db:
+        with self.session_factory() as db:
             job = db.query(Job).filter_by(id=job_id).first()
             if not job:
                 raise ValueError(f"Job ID '{job_id}' not found in database.")
@@ -147,8 +158,8 @@ To execute an action, enter one of the following commands:
                 raise AlreadySubmittedError(f"Application for {job.company} is already in state '{app.status}'.")
 
         # 1. Ensure tailoring materials exist
-        tailor_agent = TailoringAgent()
-        dest_dir = PROJECT_ROOT / "artifacts" / job_id
+        tailor_agent = TailoringAgent(user=self.user)
+        dest_dir = self.artifacts_base / job_id
         if not (dest_dir / "answers.json").exists():
             tailor_agent.tailor_job(job_id)
 
@@ -197,7 +208,7 @@ To execute an action, enter one of the following commands:
             await browser.close()
 
         # 6. Generate Review Packet
-        with SessionLocal() as db:
+        with self.session_factory() as db:
             job = db.query(Job).filter_by(id=job_id).first()
             app = job.application
 
@@ -262,7 +273,7 @@ To execute an action, enter one of the following commands:
         """Submit the application upon explicit human approval, strictly checked by the PreToolUse hook."""
         now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 
-        with SessionLocal() as db:
+        with self.session_factory() as db:
             job = db.query(Job).filter_by(id=job_id).first()
             if not job:
                 raise ValueError(f"Job ID '{job_id}' not found.")
@@ -294,13 +305,13 @@ To execute an action, enter one of the following commands:
                 ts=now,
                 actor=actor,
                 type="approval_granted",
-                payload_json=json.dumps({"command": f"ia approve {job_id}", "approved_by": approver})
+                payload_json=json.dumps({"command": f"ja approve {job_id}", "approved_by": approver})
             )
             db.add(approval_event)
             db.commit()
 
         # Execute submission with Playwright
-        dest_dir = PROJECT_ROOT / "artifacts" / job_id
+        dest_dir = self.artifacts_base / job_id
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         async with async_playwright() as p:
@@ -339,7 +350,7 @@ To execute an action, enter one of the following commands:
             await browser.close()
 
         # Update database with confirmation ID
-        with SessionLocal() as db:
+        with self.session_factory() as db:
             app = db.query(Application).filter_by(job_id=job_id).first()
             confirmation_id = submission_result.get("confirmation_id", f"CONF-{job_id[:8].upper()}")
             app.status = "submitted"
@@ -372,7 +383,7 @@ To execute an action, enter one of the following commands:
     def edit_field(self, job_id: str, field_name: str, new_value: str) -> Dict[str, Any]:
         """Edit a pre-filled field value before approval."""
         now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
-        dest_dir = PROJECT_ROOT / "artifacts" / job_id
+        dest_dir = self.artifacts_base / job_id
         dump_path = dest_dir / "form_dump.json"
 
         if dump_path.exists():
@@ -382,7 +393,7 @@ To execute an action, enter one of the following commands:
             with open(dump_path, "w", encoding="utf-8") as f:
                 json.dump(dump_data, f, indent=2)
 
-        with SessionLocal() as db:
+        with self.session_factory() as db:
             app = db.query(Application).filter_by(job_id=job_id).first()
             if app:
                 evt = Event(
@@ -401,7 +412,7 @@ To execute an action, enter one of the following commands:
     def reject_application(self, job_id: str, reason: str = "User rejected") -> Dict[str, Any]:
         """Skip this job posting."""
         now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
-        with SessionLocal() as db:
+        with self.session_factory() as db:
             app = db.query(Application).filter_by(job_id=job_id).first()
             if app:
                 app.status = "skipped"

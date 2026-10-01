@@ -16,15 +16,33 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from db.session import init_db, SessionLocal
+from db.session import (
+    init_db,
+    SessionLocal,
+    get_user_session_factory,
+    resolve_database_path,
+)
 from db.models import Job, Application, Event, Score
 
 app = typer.Typer(
-    name="ia",
-    help="Semi-automated Internship Application Assistant for Summer 2027 SWE Intern roles.",
+    name="ja",
+    help="Semi-automated Software Engineering Job and Internship Application Assistant (Full-Time, New Grad, Internships).",
     no_args_is_help=True,
 )
 console = Console()
+
+state = {"user": None}
+
+@app.callback()
+def main(
+    user: Optional[str] = typer.Option(None, "--user", "-u", help="User profile context (defaults to standard database and profile)")
+):
+    """Job Application Assistant (ja / ia) – Semi-automated SWE Job & Internship Application Assistant."""
+    if user:
+        state["user"] = user
+
+def _resolve_user(user_arg: Optional[str] = None) -> Optional[str]:
+    return user_arg or state.get("user")
 
 def load_yaml(path: Path) -> dict:
     if not path.exists():
@@ -34,30 +52,60 @@ def load_yaml(path: Path) -> dict:
 
 @app.command(name="init")
 def init_cmd(
+    user: Optional[str] = typer.Option(None, "--user", "-u", help="User profile name for dedicated profile and database (e.g. 'alice')"),
+    resume: Optional[str] = typer.Option(None, "--resume", "-r", help="Path to resume PDF or Markdown file to import"),
+    mode: Optional[str] = typer.Option(None, "--mode", "-m", help="Job search mode: 'general' (Full-Time, New Grad, Internship) or 'internship'"),
     force: bool = typer.Option(False, "--force", "-f", help="Force overwrite of existing profile and facts files"),
     non_interactive: bool = typer.Option(False, "--non-interactive", "-y", help="Skip interactive prompts and use example templates")
 ):
-    """Initialize candidate profile, facts bank, resume variants, and database."""
-    console.print(Panel.fit(
-        "[bold cyan]Internship Application Assistant – Onboarding Setup Wizard[/bold cyan]\n"
-        "Configure candidate profile, verifiable facts bank, resume variants, and local database.",
-        title="Setup",
-        border_style="cyan"
-    ))
+    """Initialize candidate profile, facts bank, resume variants, targeted job market, and dedicated database."""
+    resolved_user = _resolve_user(user)
+    is_interactive = not non_interactive and sys.stdin.isatty()
 
-    profile_path = PROJECT_ROOT / "profile" / "profile.yaml"
+    if not resolved_user and is_interactive:
+        chosen_user = typer.prompt("Username / Profile name (e.g. 'alice', or press Enter for default)", default="")
+        if chosen_user.strip():
+            resolved_user = chosen_user.strip()
+
+    is_custom_user = bool(resolved_user and resolved_user.strip().lower() != "default")
+    user_clean = "".join(c for c in resolved_user.strip().lower() if c.isalnum() or c in ("_", "-")) if is_custom_user else None
+
+    if is_custom_user:
+        user_dir = PROJECT_ROOT / "users" / user_clean
+        user_dir.mkdir(parents=True, exist_ok=True)
+        profile_path = user_dir / "profile.yaml"
+        facts_path = user_dir / "facts.yaml"
+        filters_path = user_dir / "filters.yaml"
+        variants_dir = user_dir / "variants"
+        variants_dir.mkdir(parents=True, exist_ok=True)
+        (user_dir / "artifacts").mkdir(parents=True, exist_ok=True)
+        (user_dir / "reports").mkdir(parents=True, exist_ok=True)
+    else:
+        user_dir = None
+        profile_path = PROJECT_ROOT / "profile" / "profile.yaml"
+        facts_path = PROJECT_ROOT / "profile" / "facts.yaml"
+        filters_path = PROJECT_ROOT / "config" / "filters.yaml"
+        variants_dir = PROJECT_ROOT / "profile" / "variants"
+        variants_dir.mkdir(parents=True, exist_ok=True)
+
     profile_example = PROJECT_ROOT / "profile" / "profile.example.yaml"
-    facts_path = PROJECT_ROOT / "profile" / "facts.yaml"
     facts_example = PROJECT_ROOT / "profile" / "facts.example.yaml"
-    variants_dir = PROJECT_ROOT / "profile" / "variants"
     env_path = PROJECT_ROOT / ".env"
     env_example = PROJECT_ROOT / ".env.example"
+
+    console.print(Panel.fit(
+        f"[bold cyan]Job Application Assistant – Onboarding Setup Wizard[/bold cyan]\n"
+        f"Configuring workspace for: [bold green]{user_clean or 'Default User'}[/bold green]\n"
+        f"Database: [cyan]{resolve_database_path(user_clean)}[/cyan]",
+        title="Setup Wizard",
+        border_style="cyan"
+    ))
 
     # 1. Profile Setup
     if profile_path.exists() and not force:
         console.print(f"[bold green]✓[/bold green] Candidate profile already exists: [cyan]{profile_path}[/cyan]")
     else:
-        if non_interactive or not sys.stdin.isatty():
+        if not is_interactive:
             if profile_example.exists():
                 shutil.copyfile(profile_example, profile_path)
                 console.print(f"[bold green]✓[/bold green] Initialized profile from template: [cyan]{profile_path}[/cyan]")
@@ -67,12 +115,12 @@ def init_cmd(
             parts = full_name.split()
             first_name = parts[0] if parts else "Jane"
             last_name = parts[-1] if len(parts) > 1 else "Doe"
-            email = typer.prompt("Email", default=f"{first_name.lower()}.{last_name.lower()}@university.edu")
+            email = typer.prompt("Email", default=f"{first_name.lower()}.{last_name.lower()}@example.com")
             phone = typer.prompt("Phone number", default="(555) 123-4567")
-            institution = typer.prompt("University / Institution", default="State University")
-            major = typer.prompt("Major", default="Computer Science")
-            grad_expected = typer.prompt("Expected Graduation (e.g. May 2028)", default="May 2028")
-            gpa = typer.prompt("GPA", default="3.85")
+            institution = typer.prompt("University / Current Company", default="University / Company")
+            major = typer.prompt("Major / Focus Area", default="Computer Science")
+            grad_expected = typer.prompt("Graduation Date or Status (e.g. May 2026, May 2028, or Graduated)", default="May 2028")
+            gpa = typer.prompt("GPA (or N/A)", default="3.85")
             github = typer.prompt("GitHub Profile URL", default=f"https://github.com/{first_name.lower()}{last_name.lower()}")
             linkedin = typer.prompt("LinkedIn Profile URL", default=f"https://linkedin.com/in/{first_name.lower()}{last_name.lower()}")
 
@@ -84,7 +132,7 @@ def init_cmd(
                     "email": email,
                     "phone": phone,
                     "address": {
-                        "street": "123 University Ave",
+                        "street": "123 Main St",
                         "city": "San Francisco",
                         "state": "CA",
                         "postal_code": "94107",
@@ -95,12 +143,12 @@ def init_cmd(
                     "institution": institution,
                     "degree": "Bachelor of Science",
                     "major": major,
-                    "minor": "Mathematics",
+                    "minor": "",
                     "gpa": gpa,
                     "start_date": "August 2024",
                     "graduation_expected": grad_expected,
                     "graduation_term": grad_expected,
-                    "class_year": f"Class of {grad_expected[-4:]}" if len(grad_expected) >= 4 else "Class of 2028"
+                    "class_year": f"Class of {grad_expected[-4:]}" if len(grad_expected) >= 4 and grad_expected[-4:].isdigit() else "Alumni"
                 },
                 "work_authorization": {
                     "us_citizen": True,
@@ -133,21 +181,70 @@ def init_cmd(
             shutil.copyfile(facts_example, facts_path)
             console.print(f"[bold green]✓[/bold green] Initialized verifiable facts bank: [cyan]{facts_path}[/cyan]")
 
-    # 3. Resume Markdown Variants Setup
-    variants_dir.mkdir(parents=True, exist_ok=True)
+    # 3. Resume Ingestion & Variants Setup
+    resume_file_to_import = resume
+    if not resume_file_to_import and is_interactive:
+        console.print("\n[bold yellow]Step 2: Resume Ingestion[/bold yellow]")
+        res_in = typer.prompt("Path to master resume PDF or Markdown file (or press Enter to use templates)", default="")
+        if res_in.strip():
+            resume_file_to_import = res_in.strip()
+
+    if resume_file_to_import:
+        src_resume = Path(resume_file_to_import)
+        if src_resume.exists():
+            if src_resume.suffix.lower() == ".pdf":
+                dest_pdf = (user_dir / "resume.pdf") if user_dir else (PROJECT_ROOT / "profile" / "resume.pdf")
+                shutil.copyfile(src_resume, dest_pdf)
+                console.print(f"[bold green]✓[/bold green] Imported master resume PDF: [cyan]{dest_pdf}[/cyan]")
+            elif src_resume.suffix.lower() in [".md", ".txt"]:
+                dest_md = variants_dir / "general.md"
+                shutil.copyfile(src_resume, dest_md)
+                console.print(f"[bold green]✓[/bold green] Imported master resume markdown: [cyan]{dest_md}[/cyan]")
+        else:
+            console.print(f"[bold yellow]⚠️ Specified resume path '{resume_file_to_import}' not found. Using templates.[/bold yellow]")
+
+    # Ensure baseline markdown variants exist
     for variant in ["general", "systems", "quant"]:
         var_file = variants_dir / f"{variant}.md"
-        var_example = variants_dir / f"{variant}.example.md"
+        var_example = (PROJECT_ROOT / "profile" / "variants" / f"{variant}.example.md")
+        if not var_example.exists():
+            var_example = PROJECT_ROOT / "profile" / "variants" / f"{variant}.md"
         if not var_file.exists() and var_example.exists():
             shutil.copyfile(var_example, var_file)
             console.print(f"[bold green]✓[/bold green] Created resume variant: [cyan]{var_file.name}[/cyan]")
 
-    # 4. Resume PDF Check
-    pdfs = list((PROJECT_ROOT / "profile").glob("*.pdf"))
+    # Check for master PDF
+    target_pdf_dir = user_dir if user_dir else (PROJECT_ROOT / "profile")
+    pdfs = list(target_pdf_dir.glob("*.pdf"))
     if pdfs:
         console.print(f"[bold green]✓[/bold green] Master resume PDF found: [cyan]{pdfs[0].name}[/cyan]")
     else:
-        console.print("[bold yellow]ℹ Resume PDF notice:[/bold yellow] Place your master resume PDF into [cyan]profile/[/cyan] (e.g. profile/resume.pdf)")
+        console.print(f"[bold yellow]ℹ Resume PDF notice:[/bold yellow] Place your master resume PDF into [cyan]{target_pdf_dir}/resume.pdf[/cyan]")
+
+    # 4. Target Job Market Preferences
+    search_mode = mode or "general"
+    if not mode and is_interactive:
+        console.print("\n[bold yellow]Step 3: Target Job Market Preferences[/bold yellow]")
+        m_choice = typer.prompt("Select target roles: 1) All (Full-Time, New Grad, Internship), 2) Internship only, 3) Full-Time & New Grad only", default="1")
+        if m_choice.strip() == "2":
+            search_mode = "internship"
+            target_types = ["internship"]
+        elif m_choice.strip() == "3":
+            search_mode = "full_time"
+            target_types = ["full_time", "new_grad"]
+        else:
+            search_mode = "general"
+            target_types = ["full_time", "new_grad", "internship"]
+    else:
+        target_types = ["internship"] if search_mode == "internship" else ["full_time", "new_grad", "internship"]
+
+    if is_custom_user:
+        base_filters = load_yaml(PROJECT_ROOT / "config" / "filters.yaml")
+        base_filters["job_search_mode"] = search_mode
+        base_filters["target_job_types"] = target_types
+        with open(filters_path, "w", encoding="utf-8") as f:
+            yaml.dump(base_filters, f, sort_keys=False, default_flow_style=False)
+        console.print(f"[bold green]✓[/bold green] Configured targeted job market filters: [cyan]{filters_path}[/cyan] (Mode: {search_mode})")
 
     # 5. Environment File Setup
     if not env_path.exists() and env_example.exists():
@@ -155,35 +252,53 @@ def init_cmd(
         console.print(f"[bold green]✓[/bold green] Created environment file: [cyan].env[/cyan]")
 
     # 6. Database Initialization
-    init_db()
-    console.print("[bold green]✓[/bold green] Local SQLite database initialized: [cyan]internships.db[/cyan]")
+    init_db(user=user_clean if is_custom_user else None)
+    db_resolved = resolve_database_path(user_clean if is_custom_user else None)
+    console.print(f"[bold green]✓[/bold green] Dedicated SQLite database initialized: [cyan]{db_resolved}[/cyan]")
 
+    cmd_prefix = f"--user {user_clean} " if is_custom_user else ""
     console.print(Panel.fit(
-        "[bold green]Setup Complete![/bold green]\n\n"
-        "Your assistant is ready to use. Suggested next steps:\n"
-        " • [bold cyan]ia status[/bold cyan]      : View candidate profile & company ATS coverage\n"
-        " • [bold cyan]ia source[/bold cyan]      : Discover new Summer 2027 internship postings\n"
-        " • [bold cyan]ia rank[/bold cyan]        : Filter & rank postings against your criteria\n"
-        " • [bold cyan]ia tailor all[/bold cyan]  : Generate tailored bundles for top opportunities\n"
-        " • [bold cyan]ia apply <id>[/bold cyan]  : Pre-fill application form with Playwright",
+        f"[bold green]Setup Complete for {user_clean or 'Default Candidate'}![/bold green]\n\n"
+        "Your assistant is ready to use with either [bold cyan]ja[/bold cyan] (Job Assistant) or [bold cyan]ia[/bold cyan] (Internship Assistant):\n"
+        f" • [bold cyan]ja {cmd_prefix}status[/bold cyan]      : View profile & application pipeline state\n"
+        f" • [bold cyan]ja {cmd_prefix}source[/bold cyan]      : Discover new job & internship postings\n"
+        f" • [bold cyan]ja {cmd_prefix}rank[/bold cyan]        : Filter & score opportunities for your profile\n"
+        f" • [bold cyan]ja {cmd_prefix}tailor all[/bold cyan]  : Generate tailored materials (resumes, answers)\n"
+        f" • [bold cyan]ja {cmd_prefix}apply <id>[/bold cyan]  : Pre-fill application form with Playwright\n"
+        f" • [bold cyan]ja {cmd_prefix}review[/bold cyan]      : Review pre-filled applications\n"
+        f" • [bold cyan]ja {cmd_prefix}approve <id>[/bold cyan]: Grant approval & submit application\n"
+        f" • [bold cyan]ja {cmd_prefix}digest[/bold cyan]      : Daily status digest & refresh tracker.xlsx",
         title="Ready",
         border_style="green"
     ))
 
 @app.command(name="status")
-def status_cmd():
+def status_cmd(
+    user: Optional[str] = typer.Option(None, "--user", "-u", help="User profile context")
+):
     """Display system status, database statistics, company coverage, and pipeline state."""
-    init_db()
+    resolved_user = _resolve_user(user)
+    init_db(user=resolved_user)
     companies_data = load_yaml(PROJECT_ROOT / "config" / "companies.yaml")
     companies = companies_data.get("companies", [])
-    profile_data = load_yaml(PROJECT_ROOT / "profile" / "profile.yaml")
+
+    user_dir = PROJECT_ROOT / "users" / resolved_user if resolved_user and resolved_user != "default" else None
+    prof_p = (user_dir / "profile.yaml") if user_dir and (user_dir / "profile.yaml").exists() else (PROJECT_ROOT / "profile" / "profile.yaml")
+    if not prof_p.exists():
+        prof_p = PROJECT_ROOT / "profile" / "profile.example.yaml"
+    profile_data = load_yaml(prof_p)
+
+    user_filters = (user_dir / "filters.yaml") if user_dir and (user_dir / "filters.yaml").exists() else (PROJECT_ROOT / "config" / "filters.yaml")
+    filters_cfg = load_yaml(user_filters)
+    target_types = filters_cfg.get("target_job_types", ["full_time", "new_grad", "internship"])
 
     console.print(Panel.fit(
-        f"[bold green]Internship Application Assistant (Summer 2027)[/bold green]\n"
-        f"Candidate: [cyan]{profile_data.get('personal', {}).get('full_name', 'Not configured (run ia init)')}[/cyan] | "
+        f"[bold green]Job & Internship Application Assistant ({', '.join(t.replace('_', ' ').title() for t in target_types)})[/bold green]\n"
+        f"Candidate: [cyan]{profile_data.get('personal', {}).get('full_name', 'Not configured (run ja init)')}[/cyan] | "
         f"School: [cyan]{profile_data.get('education', {}).get('institution', 'Not configured')}[/cyan] | "
         f"GPA: [cyan]{profile_data.get('education', {}).get('gpa', 'N/A')}[/cyan] | "
-        f"Class: [cyan]{profile_data.get('education', {}).get('class_year', 'N/A')}[/cyan]",
+        f"Class: [cyan]{profile_data.get('education', {}).get('class_year', 'N/A')}[/cyan]\n"
+        f"Database: [dim]{resolve_database_path(resolved_user)}[/dim]",
         title="Candidate Profile",
         border_style="green"
     ))
@@ -218,7 +333,8 @@ def status_cmd():
         console.print("[bold green]✓ 100% of target companies have verified ATS tokens or documented custom reasons.[/bold green]\n")
 
     # Check Database Status
-    with SessionLocal() as db:
+    factory = get_user_session_factory(resolved_user)
+    with factory() as db:
         total_jobs = db.query(Job).count()
         apps = db.query(Application).all()
         status_counts = {}
@@ -249,12 +365,16 @@ def status_cmd():
                 console.print(f" • [bold]{job.company}[/bold] – {job.title} ({job.location_norm}) {stage_badge}: {a.notes}")
 
 @app.command(name="source")
-def source_cmd(dry_run: bool = typer.Option(False, "--dry-run", help="Simulate run without writing to DB")):
+def source_cmd(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Simulate run without writing to DB"),
+    user: Optional[str] = typer.Option(None, "--user", "-u", help="User profile context")
+):
     """Run Sourcing Agent to discover new postings across GitHub lists and ATS APIs."""
-    init_db()
-    console.print(f"[bold blue]Running Sourcing Agent (dry_run={dry_run})...[/bold blue]")
+    resolved_user = _resolve_user(user)
+    init_db(user=resolved_user)
+    console.print(f"[bold blue]Running Sourcing Agent (dry_run={dry_run}, user={resolved_user or 'default'})...[/bold blue]")
     from agents.sourcing import SourcingAgent
-    agent = SourcingAgent()
+    agent = SourcingAgent(user=resolved_user)
     stats = agent.run(dry_run=dry_run)
 
     console.print(f"[bold green]Sourcing complete![/bold green]")
@@ -267,16 +387,19 @@ def source_cmd(dry_run: bool = typer.Option(False, "--dry-run", help="Simulate r
 @app.command(name="rank")
 def rank_cmd(
     force: bool = typer.Option(False, "--force", "-f", help="Re-score already scored jobs"),
-    limit: int = typer.Option(15, "--limit", "-n", help="Number of ranked jobs to display")
+    limit: int = typer.Option(15, "--limit", "-n", help="Number of ranked jobs to display"),
+    user: Optional[str] = typer.Option(None, "--user", "-u", help="User profile context")
 ):
     """Run Filter & Rank Agent to score pending jobs."""
-    init_db()
-    console.print(f"[bold blue]Running Filter & Rank Agent (force={force})...[/bold blue]")
+    resolved_user = _resolve_user(user)
+    init_db(user=resolved_user)
+    console.print(f"[bold blue]Running Filter & Rank Agent (force={force}, user={resolved_user or 'default'})...[/bold blue]")
     from agents.rank import FilterAndRankAgent
-    ranker = FilterAndRankAgent()
+    ranker = FilterAndRankAgent(user=resolved_user)
     scores = ranker.rank_all_jobs(force=force)
 
-    with SessionLocal() as db:
+    factory = get_user_session_factory(resolved_user)
+    with factory() as db:
         top_jobs = (
             db.query(Job)
             .join(Score)
@@ -314,15 +437,18 @@ def rank_cmd(
 @app.command(name="tailor")
 def tailor_cmd(
     job_id: str = typer.Argument(..., help="ID of job to tailor materials for, or 'all' to tailor top qualified jobs"),
-    limit: int = typer.Option(5, "--limit", "-n", help="Limit when tailoring multiple jobs")
+    limit: int = typer.Option(5, "--limit", "-n", help="Limit when tailoring multiple jobs"),
+    user: Optional[str] = typer.Option(None, "--user", "-u", help="User profile context")
 ):
     """Generate tailored materials bundle (resume variant, cover letter, answers.json, flags.md)."""
-    init_db()
+    resolved_user = _resolve_user(user)
+    init_db(user=resolved_user)
     from agents.tailor import TailoringAgent
-    agent = TailoringAgent()
+    agent = TailoringAgent(user=resolved_user)
 
     if job_id == "all":
-        with SessionLocal() as db:
+        factory = get_user_session_factory(resolved_user)
+        with factory() as db:
             qualified_jobs = (
                 db.query(Job)
                 .join(Score)
@@ -355,13 +481,15 @@ import asyncio
 @app.command(name="apply")
 def apply_cmd(
     job_id: str = typer.Argument(..., help="ID of job to pre-fill"),
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Optional override URL for test or custom page")
+    url: Optional[str] = typer.Option(None, "--url", help="Optional override URL for test or custom page"),
+    user: Optional[str] = typer.Option(None, "--user", "-u", help="User profile context")
 ):
     """Pre-fill application form with Playwright and halt before submit."""
-    init_db()
+    resolved_user = _resolve_user(user)
+    init_db(user=resolved_user)
     console.print(f"[bold blue]Pre-filling application for job {job_id}...[/bold blue]")
     from agents.apply import ApplicationAgent, AlreadySubmittedError
-    agent = ApplicationAgent()
+    agent = ApplicationAgent(user=resolved_user)
     try:
         res = asyncio.run(agent.prefill_application(job_id, custom_page_url=url))
         console.print(f"[bold green]✓ Pre-fill complete! Status: {res['status']}[/bold green]")
@@ -369,7 +497,8 @@ def apply_cmd(
         console.print(f" • Screenshot: [yellow]{res['screenshot']}[/yellow]")
         console.print(f" • Form dump: [yellow]{res['form_dump']}[/yellow]")
         console.print(f" • Review packet: [bold magenta]{res['review_packet']}[/bold magenta]")
-        console.print("\n[bold yellow]HALTED BEFORE SUBMIT.[/bold yellow] Run [bold green]ia review[/bold green] or [bold green]ia approve {job_id}[/bold green] to proceed.")
+        cmd_p = f"--user {resolved_user} " if resolved_user else ""
+        console.print(f"\n[bold yellow]HALTED BEFORE SUBMIT.[/bold yellow] Run [bold green]ja {cmd_p}review[/bold green] or [bold green]ja {cmd_p}approve {job_id}[/bold green] to proceed.")
     except AlreadySubmittedError as e:
         console.print(f"[bold red]Already submitted:[/bold red] {e}")
     except Exception as e:
@@ -377,10 +506,14 @@ def apply_cmd(
         raise
 
 @app.command(name="review")
-def review_cmd():
+def review_cmd(
+    user: Optional[str] = typer.Option(None, "--user", "-u", help="User profile context")
+):
     """Interactively review applications with status=ready_for_review."""
-    init_db()
-    with SessionLocal() as db:
+    resolved_user = _resolve_user(user)
+    init_db(user=resolved_user)
+    factory = get_user_session_factory(resolved_user)
+    with factory() as db:
         pending = (
             db.query(Job)
             .join(Application)
@@ -389,7 +522,8 @@ def review_cmd():
         )
         if not pending:
             console.print("[yellow]No applications currently in 'ready_for_review' state.[/yellow]")
-            console.print("Run [bold cyan]ia tailor all[/bold cyan] and [bold cyan]ia apply <job_id>[/bold cyan] first.")
+            cmd_p = f"--user {resolved_user} " if resolved_user else ""
+            console.print(f"Run [bold cyan]ja {cmd_p}tailor all[/bold cyan] and [bold cyan]ja {cmd_p}apply <job_id>[/bold cyan] first.")
             return
 
         console.print(f"[bold green]Found {len(pending)} application(s) ready for human review:[/bold green]\n")
@@ -401,8 +535,11 @@ def review_cmd():
         table.add_column("Score", justify="right", style="magenta")
         table.add_column("Review Packet Path", style="yellow")
 
+        user_dir = PROJECT_ROOT / "users" / resolved_user if resolved_user and resolved_user != "default" else None
+        artifacts_base = (user_dir / "artifacts") if user_dir else (PROJECT_ROOT / "artifacts")
+
         for job in pending:
-            packet_path = Path("artifacts") / job.id / "review_packet.md"
+            packet_path = artifacts_base / job.id / "review_packet.md"
             score_str = f"{job.score.total:.3f}" if job.score else "N/A"
             table.add_row(
                 job.id,
@@ -414,21 +551,24 @@ def review_cmd():
             )
 
         console.print(table)
+        cmd_p = f"--user {resolved_user} " if resolved_user else ""
         console.print("\n[bold]Next steps:[/bold]")
-        console.print(" • [bold green]ia approve <job_id>[/bold green] : Approve and submit application")
-        console.print(" • [bold yellow]ia edit <job_id> <field> <value>[/bold yellow] : Edit a pre-filled field value")
-        console.print(" • [bold red]ia reject <job_id> --reason <reason>[/bold red] : Mark application as skipped")
+        console.print(f" • [bold green]ja {cmd_p}approve <job_id>[/bold green] : Approve and submit application")
+        console.print(f" • [bold yellow]ja {cmd_p}edit <job_id> <field> <value>[/bold yellow] : Edit a pre-filled field value")
+        console.print(f" • [bold red]ja {cmd_p}reject <job_id> --reason <reason>[/bold red] : Mark application as skipped")
 
 @app.command(name="approve")
 def approve_cmd(
     job_id: str = typer.Argument(..., help="Job ID to explicitly approve for submission"),
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="Optional override URL for test or custom page")
+    url: Optional[str] = typer.Option(None, "--url", help="Optional override URL for test or custom page"),
+    user: Optional[str] = typer.Option(None, "--user", "-u", help="User profile context")
 ):
     """Approve submission for a reviewed job application."""
-    init_db()
+    resolved_user = _resolve_user(user)
+    init_db(user=resolved_user)
     console.print(f"[bold green]Approval granted for {job_id}. Executing submission...[/bold green]")
     from agents.apply import ApplicationAgent, SubmissionBlockedError, DailySubmissionCapExceeded, AlreadySubmittedError
-    agent = ApplicationAgent()
+    agent = ApplicationAgent(user=resolved_user)
     try:
         res = asyncio.run(agent.approve_and_submit(job_id, actor="human", custom_page_url=url))
         console.print(f"[bold green]✓ Application submitted successfully![/bold green]")
@@ -447,35 +587,41 @@ def approve_cmd(
 def edit_cmd(
     job_id: str = typer.Argument(..., help="Job ID"),
     field: str = typer.Argument(..., help="Field name"),
-    value: str = typer.Argument(..., help="New value")
+    value: str = typer.Argument(..., help="New value"),
+    user: Optional[str] = typer.Option(None, "--user", "-u", help="User profile context")
 ):
     """Edit a pre-filled field value before approval."""
-    init_db()
+    resolved_user = _resolve_user(user)
+    init_db(user=resolved_user)
     from agents.apply import ApplicationAgent
-    agent = ApplicationAgent()
+    agent = ApplicationAgent(user=resolved_user)
     res = agent.edit_field(job_id, field, value)
     console.print(f"[bold green]✓ Field updated successfully:[/bold green] [cyan]{res['field']}[/cyan] = [yellow]{res['new_value']}[/yellow] (Job: {job_id})")
 
 @app.command(name="reject")
 def reject_cmd(
     job_id: str = typer.Argument(..., help="Job ID"),
-    reason: str = typer.Option("User rejected", "--reason", "-r", help="Rejection rationale")
+    reason: str = typer.Option("User rejected", "--reason", "-r", help="Rejection rationale"),
+    user: Optional[str] = typer.Option(None, "--user", "-u", help="User profile context")
 ):
     """Mark application as skipped."""
-    init_db()
+    resolved_user = _resolve_user(user)
+    init_db(user=resolved_user)
     from agents.apply import ApplicationAgent
-    agent = ApplicationAgent()
+    agent = ApplicationAgent(user=resolved_user)
     res = agent.reject_application(job_id, reason=reason)
     console.print(f"[bold red]✓ Marked job {job_id} as skipped.[/bold red] Reason: {res['reason']}")
 
 @app.command(name="digest")
 def digest_cmd(
-    date: Optional[str] = typer.Option(None, "--date", "-d", help="Target date for digest (YYYY-MM-DD)")
+    date: Optional[str] = typer.Option(None, "--date", "-d", help="Target date for digest (YYYY-MM-DD)"),
+    user: Optional[str] = typer.Option(None, "--user", "-u", help="User profile context")
 ):
     """Generate daily status digest report (reports/YYYY-MM-DD.md) and update tracker.xlsx."""
-    init_db()
+    resolved_user = _resolve_user(user)
+    init_db(user=resolved_user)
     from agents.tracker import TrackerAgent
-    agent = TrackerAgent()
+    agent = TrackerAgent(user=resolved_user)
     target_date = None
     if date:
         try:
@@ -484,19 +630,21 @@ def digest_cmd(
             console.print(f"[bold red]Invalid date format '{date}'. Please use YYYY-MM-DD.[/bold red]")
             raise typer.Exit(code=1)
 
-    console.print(f"[bold blue]Generating daily digest report (target date: {target_date or datetime.date.today()})...[/bold blue]")
+    console.print(f"[bold blue]Generating daily digest report (target date: {target_date or datetime.date.today()}, user={resolved_user or 'default'})...[/bold blue]")
     result = agent.run(report_date=target_date)
     console.print(f"[bold green]✓ Daily digest report generated![/bold green] -> [cyan]{result['digest_path']}[/cyan]")
     console.print(f"[bold green]✓ Excel spreadsheet updated![/bold green] -> [yellow]{result['excel_path']}[/yellow]")
 
 @app.command(name="export")
 def export_cmd(
-    output: Optional[str] = typer.Option(None, "--output", "-o", help="Output spreadsheet path (defaults to tracker.xlsx)")
+    output: Optional[str] = typer.Option(None, "--output", "-o", help="Output spreadsheet path (defaults to tracker.xlsx)"),
+    user: Optional[str] = typer.Option(None, "--user", "-u", help="User profile context")
 ):
     """Export pipeline and job database to Excel tracker spreadsheet."""
-    init_db()
+    resolved_user = _resolve_user(user)
+    init_db(user=resolved_user)
     from agents.tracker import TrackerAgent
-    agent = TrackerAgent()
+    agent = TrackerAgent(user=resolved_user)
     out_path = Path(output) if output else None
     excel_path = agent.export_excel(output_path=out_path)
     console.print(f"[bold green]✓ Pipeline exported successfully![/bold green] -> [cyan]{excel_path}[/cyan]")
@@ -506,13 +654,15 @@ def import_cmd(
     url: str = typer.Argument(..., help="Posting URL to manually import"),
     company: Optional[str] = typer.Option(None, "--company", "-c", help="Company name"),
     title: Optional[str] = typer.Option(None, "--title", "-t", help="Role title"),
-    location: Optional[str] = typer.Option(None, "--location", "-l", help="Location")
+    location: Optional[str] = typer.Option(None, "--location", "-l", help="Location"),
+    user: Optional[str] = typer.Option(None, "--user", "-u", help="User profile context")
 ):
     """Import a manual posting URL (e.g. from LinkedIn, Handshake, or referral)."""
-    init_db()
+    resolved_user = _resolve_user(user)
+    init_db(user=resolved_user)
     console.print(f"[bold blue]Importing manual posting from {url}...[/bold blue]")
     from agents.sourcing import SourcingAgent
-    agent = SourcingAgent()
+    agent = SourcingAgent(user=resolved_user)
     result = agent.import_manual_posting(url=url, company=company, title=title, location=location)
     console.print(f"[bold green]Result: {result['status']} | Job ID: {result['job_id']} | {result['company']} - {result['title']}[/bold green]")
 
@@ -560,10 +710,12 @@ def sync_cmd(
     drive: bool = typer.Option(False, "--drive", "-d", help="Sync tracker spreadsheet and database snapshot to Google Drive"),
     check: bool = typer.Option(False, "--check", "-c", help="Check Google Drive connection and list files in folder"),
     setup: bool = typer.Option(False, "--setup", "-s", help="Guide credentials setup or initiate OAuth flow"),
-    folder_id: Optional[str] = typer.Option(None, "--folder", "-f", help="Override Google Drive folder ID")
+    folder_id: Optional[str] = typer.Option(None, "--folder", "-f", help="Override Google Drive folder ID"),
+    user: Optional[str] = typer.Option(None, "--user", "-u", help="User profile context")
 ):
     """Synchronize application database and tracker spreadsheet with Google Drive / Google Sheets."""
-    init_db()
+    resolved_user = _resolve_user(user)
+    init_db(user=resolved_user)
     from tools.gdrive_sync import GDriveSync, CredentialsNotFoundError, GoogleDriveSyncError
     from agents.tracker import TrackerAgent
 
@@ -581,13 +733,12 @@ def sync_cmd(
             "[bold green]Option 2: OAuth 2.0 Client (Interactive User Login)[/bold green]\n"
             " 1. Create OAuth Client ID (Desktop Application) in Google Cloud Console.\n"
             " 2. Download JSON and save as: [yellow]config/credentials.json[/yellow]\n"
-            " 3. Run: [bold cyan]ia sync --setup[/bold cyan] again to open the browser authorization consent screen.\n\n"
-            "Once credentials are placed, verify with [bold green]ia sync --check[/bold green].",
+            " 3. Run: [bold cyan]ja sync --setup[/bold cyan] again to open the browser authorization consent screen.\n\n"
+            "Once credentials are placed, verify with [bold green]ja sync --check[/bold green].",
             title="Google Drive Setup",
             border_style="cyan"
         ))
 
-        # Check if credentials.json is present to run interactive flow
         client_secrets_file = syncer.config_dir / "credentials.json"
         if client_secrets_file.exists() and not (syncer.config_dir / "token.json").exists():
             console.print("\n[bold yellow]Found config/credentials.json! Launching browser for OAuth authentication...[/bold yellow]")
@@ -622,26 +773,23 @@ def sync_cmd(
                 console.print("[dim]Folder is currently empty.[/dim]")
         else:
             console.print(f"[bold red]Connection failed:[/bold red] {info.get('error')}")
-            console.print("Run [bold cyan]ia sync --setup[/bold cyan] for instructions on configuring credentials.")
+            console.print("Run [bold cyan]ja sync --setup[/bold cyan] for instructions on configuring credentials.")
         return
 
-    # Default action or --drive: Export local tracker first, then upload to Drive if credentials present
-    console.print("[bold blue]Exporting latest local database state and Excel tracker...[/bold blue]")
-    agent = TrackerAgent()
+    console.print(f"[bold blue]Exporting latest database state and Excel tracker (user={resolved_user or 'default'})...[/bold blue]")
+    agent = TrackerAgent(user=resolved_user)
     excel_path = agent.export_excel()
     console.print(f"[bold green]✓ Local tracker updated:[/bold green] [cyan]{excel_path}[/cyan]")
 
     if drive:
         console.print(f"\n[bold blue]Synchronizing to Google Drive folder ({syncer.folder_id})...[/bold blue]")
         try:
-            # 1. Sync spreadsheet
             sheet_res = syncer.sync_spreadsheet(local_excel_path=Path(excel_path))
             console.print(f"[bold green]✓ Google Spreadsheet synced![/bold green] ({sheet_res['action']})")
             console.print(f" • Title: [bold]{sheet_res['title']}[/bold]")
             console.print(f" • Link: [bold cyan]{sheet_res['web_url']}[/bold cyan]")
             console.print(f" • Timestamp: {sheet_res['synced_at']}")
 
-            # 2. Backup database
             db_res = syncer.backup_database()
             console.print(f"[bold green]✓ Database backup uploaded![/bold green] ({db_res['action']})")
             console.print(f" • Backup file: [yellow]{db_res['filename']}[/yellow] ({db_res['size_bytes']} bytes)")
@@ -656,8 +804,7 @@ def sync_cmd(
             console.print(f"[bold red]Unexpected error during sync:[/bold red] {e}")
             raise typer.Exit(code=1)
     else:
-        console.print("\n[dim]To sync to Google Drive, pass --drive flag: [bold cyan]ia sync --drive[/bold cyan][/dim]")
+        console.print(f"\n[dim]To sync to Google Drive, pass --drive flag: [bold cyan]ja {'--user ' + resolved_user + ' ' if resolved_user else ''}sync --drive[/bold cyan][/dim]")
 
 if __name__ == "__main__":
     app()
-

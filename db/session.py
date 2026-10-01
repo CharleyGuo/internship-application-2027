@@ -4,13 +4,14 @@ import hashlib
 import json
 import datetime
 from pathlib import Path
-from typing import Generator
-from sqlalchemy import create_engine
+from typing import Generator, Optional, Dict, Any
+from sqlalchemy import create_engine, Engine
 from sqlalchemy.orm import sessionmaker, Session
 
 from db.models import Base, Job, Score, Application, Event
 
-DB_FILE = Path(__file__).resolve().parent.parent / "internships.db"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DB_FILE = PROJECT_ROOT / "internships.db"
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DB_FILE}")
 
 engine = create_engine(
@@ -21,9 +22,47 @@ engine = create_engine(
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-def get_db() -> Generator[Session, None, None]:
-    """Yield a transactional database session."""
-    db = SessionLocal()
+_engines: Dict[str, Engine] = {"default": engine}
+_session_factories: Dict[str, sessionmaker] = {"default": SessionLocal}
+
+def resolve_database_path(user: Optional[str] = None) -> Path:
+    """Resolve database file path for given user profile, defaulting to internships.db."""
+    if user and user.strip() and user.strip().lower() != "default":
+        user_clean = "".join(c for c in user.strip().lower() if c.isalnum() or c in ("_", "-"))
+        data_dir = PROJECT_ROOT / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir / f"{user_clean}.db"
+    if os.getenv("DATABASE_URL"):
+        url = os.environ["DATABASE_URL"]
+        if url.startswith("sqlite:///"):
+            return Path(url[len("sqlite:///"):])
+    return DB_FILE
+
+def get_engine_for_user(user: Optional[str] = None) -> Engine:
+    """Get or create cached SQLAlchemy Engine for a user."""
+    key = (user or "default").strip().lower()
+    if key not in _engines:
+        db_path = resolve_database_path(user)
+        db_url = f"sqlite:///{db_path}"
+        _engines[key] = create_engine(
+            db_url,
+            connect_args={"check_same_thread": False},
+            echo=False
+        )
+    return _engines[key]
+
+def get_user_session_factory(user: Optional[str] = None) -> sessionmaker:
+    """Get or create cached sessionmaker for a user."""
+    key = (user or "default").strip().lower()
+    if key not in _session_factories:
+        eng = get_engine_for_user(user)
+        _session_factories[key] = sessionmaker(autocommit=False, autoflush=False, bind=eng)
+    return _session_factories[key]
+
+def get_db(user: Optional[str] = None) -> Generator[Session, None, None]:
+    """Yield a transactional database session for the specified user."""
+    factory = get_user_session_factory(user)
+    db = factory()
     try:
         yield db
     finally:
@@ -79,7 +118,7 @@ def seed_initial_pipeline(db: Session) -> None:
             job_id=optiver_job.id,
             status="in_process",
             resume_variant="quant",
-            notes="Phone interview 9/18/2026 and waiting for next step.",
+            notes="Second interview with Recruiter was on 9/9. 9/18 interview was online technical phone interview of 45 coding questions. Arranging second technical phone interview.",
             last_event_at=datetime.datetime(2026, 9, 18, 14, 0)
         )
         db.add(optiver_app)
@@ -150,8 +189,11 @@ def seed_initial_pipeline(db: Session) -> None:
 
     db.commit()
 
-def init_db() -> None:
-    """Initialize database tables and seed day-one applications."""
-    Base.metadata.create_all(bind=engine)
-    with SessionLocal() as db:
-        seed_initial_pipeline(db)
+def init_db(user: Optional[str] = None) -> None:
+    """Initialize database tables for the given user (or default)."""
+    eng = get_engine_for_user(user)
+    Base.metadata.create_all(bind=eng)
+    factory = get_user_session_factory(user)
+    with factory() as db:
+        if not user or user.strip().lower() == "default":
+            seed_initial_pipeline(db)

@@ -145,7 +145,7 @@ def test_end_to_end_3_synthetic_postings_flow():
 
     # Verify Daily Digest Contents
     digest_text = digest_path.read_text(encoding="utf-8")
-    assert "Daily Internship Application Digest" in digest_text
+    assert ("Daily Internship Application Digest" in digest_text or "Daily Job Application Digest" in digest_text)
     # In-process pipeline preserved
     assert "Optiver" in digest_text
     assert "Jane Street" in digest_text
@@ -154,7 +154,7 @@ def test_end_to_end_3_synthetic_postings_flow():
     assert "Anthropic" in digest_text
     # Application ready for review
     assert "Stripe" in digest_text
-    assert "ia approve job_synth_p5_3" in digest_text
+    assert "approve job_synth_p5_3" in digest_text
 
     # Verify Excel Spreadsheet Matches DB State
     wb = openpyxl.load_workbook(excel_path)
@@ -231,9 +231,9 @@ def test_digest_across_3_consecutive_simulated_dates():
     t2 = p2.read_text(encoding="utf-8")
     t3 = p3.read_text(encoding="utf-8")
 
-    assert "Daily Internship Application Digest: 2026-09-18" in t1
-    assert "Daily Internship Application Digest: 2026-09-19" in t2
-    assert "Daily Internship Application Digest: 2026-09-20" in t3
+    assert ("Daily Internship Application Digest: 2026-09-18" in t1 or "Daily Job Application Digest: 2026-09-18" in t1)
+    assert ("Daily Internship Application Digest: 2026-09-19" in t2 or "Daily Job Application Digest: 2026-09-19" in t2)
+    assert ("Daily Internship Application Digest: 2026-09-20" in t3 or "Daily Job Application Digest: 2026-09-20" in t3)
 
     # All 3 digests accurately track the active interview pipeline
     for t in [t1, t2, t3]:
