@@ -112,6 +112,8 @@ def test_cli_init_and_status_multi_user_workflow():
 def test_general_swe_role_filtering_and_ranking():
     """Verify general job search mode correctly filters and scores Full-Time, New Grad, and Internship roles."""
     ranker = FilterAndRankAgent()
+    ranker.job_search_mode = "general"
+    ranker.target_job_types = ["full_time", "new_grad", "internship"]
 
     # 1. Target Full-Time SWE role
     fulltime_job = Job(
@@ -182,3 +184,29 @@ def test_general_swe_role_filtering_and_ranking():
     score_de = ranker.compute_score(data_eng_job)
     assert score_de.eligible is False
     assert "data engineer" in score_de.rationale.lower() or "data_engineer" in score_de.rationale.lower()
+
+def test_cli_update_command_and_next_action():
+    """Verify 'ja update' updates application status/notes, logs audit event, and refreshes next action."""
+    from db.models import Event
+    from agents.tracker import TrackerAgent
+
+    # 1. Update Jane Street interview notes via CLI
+    res = runner.invoke(app, ["update", "Jane Street", "--notes", "Prep underway. Onsite interview scheduled for 10/16, Friday."])
+    assert res.exit_code == 0
+    assert "Updated application for Jane Street" in res.output
+
+    # 2. Verify DB state and audit event
+    with SessionLocal() as db:
+        js_app = db.query(Application).join(Job).filter(Job.company == "Jane Street").first()
+        assert js_app is not None
+        assert "prep underway" in js_app.notes.lower()
+        assert "10/16" in js_app.notes
+        
+        events = db.query(Event).filter(Event.application_id == js_app.id).order_by(Event.ts.desc()).all()
+        assert any(e.type == "status_update" and "10/16" in (e.payload_json or "") for e in events)
+
+    # 3. Verify next action mapping in TrackerAgent
+    tracker = TrackerAgent()
+    next_act = tracker._determine_next_action(js_app.status, "Jane Street", js_app.notes)
+    assert "Prep onsite interview (scheduled for 10/16, Friday)" in next_act
+

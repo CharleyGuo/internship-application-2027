@@ -5,6 +5,7 @@ import shutil
 import datetime
 from pathlib import Path
 from typing import Optional, List
+import json
 import yaml
 import typer
 from rich.console import Console
@@ -21,6 +22,7 @@ from db.session import (
     SessionLocal,
     get_user_session_factory,
     resolve_database_path,
+    generate_id,
 )
 from db.models import Job, Application, Event, Score
 
@@ -611,6 +613,68 @@ def reject_cmd(
     agent = ApplicationAgent(user=resolved_user)
     res = agent.reject_application(job_id, reason=reason)
     console.print(f"[bold red]✓ Marked job {job_id} as skipped.[/bold red] Reason: {res['reason']}")
+
+@app.command(name="update")
+def update_cmd(
+    target: str = typer.Argument(..., help="Company name or Application ID/Job ID to update"),
+    notes: Optional[str] = typer.Option(None, "--notes", "-n", help="Interview / progress notes"),
+    status: Optional[str] = typer.Option(None, "--status", "-s", help="Application stage/status (e.g., in_process, onsite, offer, rejected)"),
+    user: Optional[str] = typer.Option(None, "--user", "-u", help="User profile context")
+):
+    """Update progress notes or status for an application (e.g. interview scheduled, recruiter response)."""
+    resolved_user = _resolve_user(user)
+    init_db(user=resolved_user)
+
+    session_factory = get_user_session_factory(resolved_user)
+    with session_factory() as db:
+        app_record = (
+            db.query(Application)
+            .join(Job)
+            .filter(
+                (Application.id == target) |
+                (Job.id == target) |
+                (Job.company.ilike(f"%{target}%"))
+            )
+            .first()
+        )
+        if not app_record:
+            console.print(f"[bold red]Error: No application found matching '{target}'.[/bold red]")
+            raise typer.Exit(code=1)
+
+        now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+        changes = {}
+        if notes is not None:
+            app_record.notes = notes
+            changes["notes"] = notes
+        if status is not None:
+            app_record.status = status
+            changes["status"] = status
+        
+        app_record.last_event_at = now
+        
+        evt_id = generate_id("evt", f"{app_record.id}-{int(now.timestamp())}")
+        evt = Event(
+            id=evt_id,
+            application_id=app_record.id,
+            ts=now,
+            actor="human",
+            type="status_update",
+            payload_json=json.dumps(changes)
+        )
+        db.add(evt)
+        db.commit()
+
+        console.print(f"[bold green]✓ Updated application for {app_record.job.company} ({app_record.job.title}):[/bold green]")
+        if status:
+            console.print(f"  • Status: [cyan]{app_record.status}[/cyan]")
+        if notes:
+            console.print(f"  • Notes: [yellow]{app_record.notes}[/yellow]")
+
+    # Automatically refresh spreadsheet tracker
+    from agents.tracker import TrackerAgent
+    tracker = TrackerAgent(user=resolved_user)
+    tracker.export_excel()
+    console.print("[bold green]✓ Refreshed tracker.xlsx spreadsheet snapshot.[/bold green]")
 
 @app.command(name="digest")
 def digest_cmd(

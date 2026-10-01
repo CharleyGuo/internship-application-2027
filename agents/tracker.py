@@ -242,10 +242,21 @@ class TrackerAgent:
         else:
             return 3
 
-    def _determine_next_action(self, status: str, company: str) -> str:
+    def _determine_next_action(self, status: str, company: str, notes: Optional[str] = None) -> str:
         """Map application status to clear next action for human candidate."""
+        if status == "in_process":
+            if notes:
+                n_low = notes.lower()
+                if "onsite" in n_low:
+                    m = re.search(r'scheduled for\s+([^.]+)', notes, re.IGNORECASE)
+                    if m:
+                        return f"Prep onsite interview (scheduled for {m.group(1).strip()})"
+                    return "Prep onsite interview / technical & behavioral review"
+                if "phone" in n_low or "first round" in n_low:
+                    return "Prep phone interview"
+            return "Prep interview / awaiting next round schedule"
+
         mapping = {
-            "in_process": "Prep interview / awaiting next round schedule",
             "ready_for_review": "Run 'ia review' or 'ia approve <id>'",
             "tailored": "Run 'ia apply <id>' to pre-fill form",
             "qualified": "Run 'ia tailor <id>' to prepare materials bundle",
@@ -448,7 +459,7 @@ class TrackerAgent:
                 md_lines.append(f"- **Location:** {item['location']} | **ATS:** {item['ats'].capitalize()} | **Priority Fit:** `{score_val}`")
                 md_lines.append(f"- **Current Stage:** `{item['status']}`")
                 md_lines.append(f"- **Latest Update:** {item['notes']}")
-                md_lines.append(f"- **Next Action:** {self._determine_next_action(item['status'], item['company'])}")
+                md_lines.append(f"- **Next Action:** {self._determine_next_action(item['status'], item['company'], item.get('notes'))}")
                 md_lines.append("")
         else:
             md_lines.append("No applications currently in interview stages.\n")
@@ -527,7 +538,7 @@ class TrackerAgent:
             "- **`ja export`** (or `ia export`) — Refresh `tracker.xlsx` spreadsheet snapshot."
         ])
 
-        target_file = output_path or (self.reports_dir / f"{date_str}.md")
+        target_file = Path(output_path) if output_path else (self.reports_dir / f"{date_str}.md")
         target_file.parent.mkdir(parents=True, exist_ok=True)
         with open(target_file, "w", encoding="utf-8") as f:
             f.write("\n".join(md_lines) + "\n")
@@ -539,7 +550,7 @@ class TrackerAgent:
         Filters only SWE roles, sorts by Industry -> Company Avg Score -> Opening Score (default),
         preserves master records, and includes Trading Companies tab.
         """
-        target_file = output_path or self.tracker_excel_path
+        target_file = Path(output_path) if output_path else self.tracker_excel_path
 
         headers = [
             "Company",
@@ -595,8 +606,8 @@ class TrackerAgent:
                 score_val = job.score.total if job.score else None
                 applied_str = app.submitted_at.strftime("%Y-%m-%d") if app.submitted_at else ""
                 conf_id = app.confirmation_id or ""
-                next_action = self._determine_next_action(app.status, job.company)
                 notes_val = app.notes or (job.score.rationale[:80] + "..." if job.score and job.score.rationale else "")
+                next_action = self._determine_next_action(app.status, job.company, notes_val)
 
                 k = (str(job.company).strip().lower(), str(job.title).strip().lower(), str(job.location_norm or job.location_raw).strip().lower())
                 k_fb = (str(job.company).strip().lower(), str(job.title).strip().lower())

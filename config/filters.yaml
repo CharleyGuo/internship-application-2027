@@ -1,10 +1,8 @@
-# General Job Application & Ranking Rules Configuration
-# Supports Full-Time, New Grad, and Internship Software Engineering roles
+# Summer 2027 SWE Internship Application & Ranking Rules Configuration
+# Configured for Alexander Guo (Vanderbilt CS Class of 2028)
 
-job_search_mode: "general"
+job_search_mode: "internship"
 target_job_types:
-  - "full_time"
-  - "new_grad"
   - "internship"
 
 limits:
