@@ -92,8 +92,8 @@ flowchart TD
 ### 2. Clone and Setup Environment
 ```bash
 # Clone the repository
-git clone https://github.com/CharleyGuo/internship-application-2027.git
-cd internship-application-2027
+git clone https://github.com/CharleyGuo/job-application.git
+cd job-application
 
 # Create and activate virtual environment
 python3 -m venv .venv
@@ -199,7 +199,7 @@ crontab -e
 ```
 Add the following line (adjusting to your cloned path):
 ```cron
-0 4 * * * /bin/bash /path/to/internship-application-2027/scripts/daily_digest.sh > /dev/null 2>&1
+0 4 * * * /bin/bash /path/to/job-application/scripts/daily_digest.sh > /dev/null 2>&1
 ```
 
 *(On macOS, you can also use a `launchd` plist in `~/Library/LaunchAgents`)*.
